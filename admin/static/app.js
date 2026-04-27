@@ -249,20 +249,26 @@ function wireUpCard(card) {
       // Without this, the iframe reconnects too early and shows a blank
       // player until the user manually refreshes.
       const wrap = $(".preview", card);
-      const iframe = $("[data-preview-frame]", card);
       if (j.reload === "restart") {
-        if (wrap && !wrap.hidden && iframe) iframe.src = "about:blank";
-        const ready = await waitForPathReady(name, 12000);
+        // Tear down the running iframe instantly — its peerConnection is
+        // about to die anyway, and freeing it now avoids stale UI.
+        if (wrap && !wrap.hidden) {
+          const cur = $("[data-preview-frame]", wrap);
+          if (cur) cur.src = "about:blank";
+        }
+        const ready = await waitForPathReady(name, 15000);
         if (ready) {
+          // mediamtx reports path ready as soon as the publisher reconnects,
+          // but its WebRTC stack needs another beat to accept WHEP offers.
+          // Settle for 800 ms before re-creating the iframe.
+          await new Promise(res => setTimeout(res, 800));
+          if (wrap && !wrap.hidden) rebuildPreviewIframe(name);
           status.textContent = "saved · stream ready";
-          if (wrap && !wrap.hidden && iframe) {
-            iframe.src = `http://${location.hostname}:8889/${name}/?t=${Date.now()}`;
-          }
         } else {
           status.classList.add("err");
-          status.textContent = "saved, but stream didn't come back in 12s — check logs";
+          status.textContent = "saved, but stream didn't come back in 15 s — try Reconnect, or check logs";
         }
-        setTimeout(() => { status.textContent = ""; status.className = "form-status"; }, 2500);
+        setTimeout(() => { status.textContent = ""; status.className = "form-status"; }, 3000);
       } else {
         setTimeout(() => { status.textContent = ""; status.className = "form-status"; }, 3000);
       }
@@ -294,8 +300,23 @@ function wireUpCard(card) {
     }
   });
 
-  // live preview toggle (lazy-loads WebRTC iframe so it doesn't auto-play
-  // every camera's stream the moment the page opens)
+  // Replace the preview iframe with a brand-new DOM node — much more
+  // reliable than changing src (no stale peerConnection / cached JS).
+  function rebuildPreviewIframe(camName) {
+    const wrap = $(".preview", card);
+    if (!wrap) return null;
+    const old = $("[data-preview-frame]", wrap);
+    const fresh = document.createElement("iframe");
+    fresh.setAttribute("data-preview-frame", "");
+    fresh.setAttribute("loading", "lazy");
+    fresh.setAttribute("allow", "autoplay");
+    fresh.setAttribute("allowfullscreen", "");
+    fresh.src = `http://${location.hostname}:8889/${camName}/?t=${Date.now()}`;
+    if (old) old.replaceWith(fresh); else wrap.appendChild(fresh);
+    return fresh;
+  }
+
+  // live preview toggle (lazy: only loads on demand, never on page open)
   $("[data-act=preview]", card)?.addEventListener("click", () => {
     const btn = $("[data-act=preview]", card);
     const wrap = $(".preview", card);
@@ -303,16 +324,27 @@ function wireUpCard(card) {
     const isOpen = !wrap.hidden;
     if (isOpen) {
       wrap.hidden = true;
-      iframe.removeAttribute("src");
+      // tear down the iframe entirely so its WebRTC peerConnection releases
+      const blank = document.createElement("iframe");
+      blank.setAttribute("data-preview-frame", "");
+      blank.setAttribute("loading", "lazy");
+      blank.setAttribute("allow", "autoplay");
+      blank.setAttribute("allowfullscreen", "");
+      iframe.replaceWith(blank);
       btn.classList.remove("open");
       btn.textContent = "Live preview ▾";
     } else {
-      const cam = card.dataset.cam;
-      iframe.src = `http://${location.hostname}:8889/${cam}/`;
+      rebuildPreviewIframe(card.dataset.cam);
       wrap.hidden = false;
       btn.classList.add("open");
       btn.textContent = "Hide preview ▴";
     }
+  });
+
+  // manual preview reconnect (backstop for cases where the post-save
+  // auto-reconnect doesn't grab the new stream)
+  $("[data-act=preview-reconnect]", card)?.addEventListener("click", () => {
+    rebuildPreviewIframe(card.dataset.cam);
   });
 
   // copy URL buttons — navigator.clipboard.writeText() is blocked in

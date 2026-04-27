@@ -85,6 +85,7 @@ section > h2 {
 .preview-toggle.open { color: var(--ok); border-color: var(--ok); }
 .preview { margin: 0.5rem 0; }
 .preview iframe { width: 100%; aspect-ratio: 16/9; border: 1px solid var(--border); border-radius: 4px; background: #000; display: block; }
+.preview-controls { display: flex; gap: 0.4rem; margin-bottom: 0.4rem; }
 
 .ready-dot {
   width: 0.7rem; height: 0.7rem;
