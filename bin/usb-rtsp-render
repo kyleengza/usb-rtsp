@@ -163,21 +163,32 @@ def build_config(cameras_doc: dict, profiles_doc: dict) -> dict:
         # control api (loopback only — admin panel talks to this)
         "api": True,
         "apiAddress": "127.0.0.1:9997",
-        # rtsp server — both TCP and UDP allowed. VLC desktop has a buggy
-        # retry path when a TCP-only server returns 461 to its first UDP
-        # SETUP (sends SETUP without DESCRIBE → mediamtx logs "invalid URL
-        # ((null))" → VLC gives up). With UDP enabled, VLC negotiates UDP
-        # cleanly on a fresh DESCRIBE → SETUP → PLAY. Most Android RTSP
-        # players default to TCP. The phone-on-WiFi-on-VLC-Android case
-        # (where UDP packet loss kills the session) is the one combination
-        # the user has to fix client-side: force RTSP-TCP in app settings.
+        # rtsp server — both TCP and UDP allowed. (VLC's RTSP client has
+        # ongoing compat issues with gortsplib's strict per-track-URL SETUP
+        # requirement; ffplay/mpv-direct/most Android apps work fine. For
+        # VLC + browser playback, HLS and WebRTC below are the universal
+        # fallbacks — same H.264 stream, no re-encode.)
         "rtsp": True,
         "rtspAddress": ":8554",
         "rtspTransports": ["tcp", "udp"],
-        # disable other protocols (we're RTSP-only by plan; flip these later if needed)
+        # HLS — http://<host>:8888/<path>/index.m3u8 — works in VLC,
+        # browsers, every smart-TV. Adds ~3 s latency (segment buffering).
+        "hls": True,
+        "hlsAddress": ":8888",
+        "hlsAlwaysRemux": False,
+        "hlsVariant": "lowLatency",
+        "hlsSegmentCount": 7,
+        "hlsSegmentDuration": "1s",
+        "hlsPartDuration": "200ms",
+        "hlsAllowOrigin": "*",
+        # WebRTC — http://<host>:8889/<path> — sub-second latency, browser
+        # native (Chrome/Safari/Firefox), no app needed. mediamtx handles ICE.
+        "webrtc": True,
+        "webrtcAddress": ":8889",
+        "webrtcAllowOrigin": "*",
+        "webrtcLocalUDPAddress": ":8189",
+        # rest disabled
         "rtmp": False,
-        "hls": False,
-        "webrtc": False,
         "srt": False,
         # paths
         "paths": paths,

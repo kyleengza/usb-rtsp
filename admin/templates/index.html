@@ -31,8 +31,12 @@
     <header>
       <h3>{{ cam.name }}</h3>
       <span class="ready-dot" data-ready></span>
-      <span class="rtsp-url"><code>rtsp://{{ host }}:8554/{{ cam.name }}</code></span>
     </header>
+    <ul class="urls">
+      <li><span class="url-label">RTSP</span> <code>rtsp://{{ host }}:8554/{{ cam.name }}</code> <span class="url-note">ffplay, mpv, most apps</span></li>
+      <li><span class="url-label">HLS</span> <code>http://{{ host }}:8888/{{ cam.name }}/index.m3u8</code> <span class="url-note">VLC, every browser, ~3 s lag</span></li>
+      <li><span class="url-label">WebRTC</span> <code><a href="http://{{ host }}:8889/{{ cam.name }}/" target="_blank">http://{{ host }}:8889/{{ cam.name }}/</a></code> <span class="url-note">browser-native, &lt;1 s lag</span></li>
+    </ul>
     <div class="meta">
       <div><strong>{{ c.card_name }}</strong></div>
       <div class="device">{{ cam.by_id }}</div>

@@ -52,10 +52,19 @@ unless that file doesn't exist (in which case it auto-detects).
 
 ## URL conventions
 
-- **RTSP:**  `rtsp://<host>:8554/<cam>`
-- **Admin:** `http://<host>:8080/`
-- **mediamtx control API:** `http://127.0.0.1:9997/v3/...` (loopback only — used
-  by the admin panel; not exposed to the LAN)
+Pick whichever your client likes — the same H.264 source feeds all three, no
+re-encode tax.
+
+| Endpoint | URL | Latency | Best for |
+|---|---|---|---|
+| **RTSP** | `rtsp://<host>:8554/<cam>` | ~200 ms | `ffplay`, `mpv`, most Android RTSP apps. **VLC's RTSP client has known compat issues with mediamtx — use HLS for VLC.** |
+| **HLS**  | `http://<host>:8888/<cam>/index.m3u8` | ~3 s | VLC, every web browser, smart TVs, every "any-codec" player |
+| **WebRTC** | `http://<host>:8889/<cam>/` | <1 s | Chrome/Firefox/Safari (incl. mobile) — open in a browser, no app needed |
+| Admin | `http://<host>:8080/` | n/a | The dashboard |
+| mediamtx API | `http://127.0.0.1:9997/v3/...` | n/a | loopback only, panel-internal |
+
+If a client is being weird with RTSP, the HLS or WebRTC URL almost always
+works as a drop-in.
 
 ## Output codec (`encode` per camera)
 
@@ -146,19 +155,25 @@ update will add a delete button.)
 
 ## Troubleshooting
 
-**VLC says "VLC is unable to open the MRL …" or "Connection failed".** VLC's
-default RTSP transport is UDP, and its fallback path-construction trips
-mediamtx's `invalid SETUP path` check (especially for MJPEG). Force VLC into
-TCP mode:
+**VLC fails with "Connection failed" / "Unable to open the MRL".** VLC's RTSP
+client sends `SETUP` against the path URL instead of the per-track URL that
+mediamtx (gortsplib) expects, so mediamtx rejects with
+`invalid SETUP path` regardless of transport. **Use the HLS URL in VLC
+instead** — `http://<host>:8888/<cam>/index.m3u8`. It works in every VLC
+version, every smart-TV, and every browser. Latency goes up to ~3 s but
+nothing else changes.
 
-- GUI: *Tools → Preferences → Input/Codecs → Live555 stream transport →
-  RTP over RTSP (TCP)* → Save → restart VLC.
-- CLI: `vlc --rtsp-tcp rtsp://<host>:8554/<cam>`
+For everything else, `ffplay rtsp://<host>:8554/<cam>` is the canary —
+ffplay follows RFC and works whenever the stream itself is healthy. If
+ffplay works but a particular player doesn't, that player has its own
+RTSP quirk; reach for HLS or WebRTC.
 
-If you're not sure whether it's VLC or the server, try `ffplay
-rtsp://<host>:8554/<cam>` — ffplay defaults to TCP and should always work.
-Server-side logs (`systemctl --user status usb-rtsp`) will show the SETUP
-attempt and the reason for any rejection.
+**Phone player drops the stream after a few seconds.** Bandwidth or decode
+ceiling. Try in this order: (a) open the WebRTC URL in the phone's
+browser instead of an RTSP app — `http://<host>:8889/<cam>/` — that
+sidesteps the issue, (b) lower the resolution / fps in the admin panel,
+(c) if you must use RTSP, force TCP transport in the player's settings
+(prevents UDP packet-loss death-spiral on weak WiFi).
 
 **mediamtx fails to start, says "device busy".** Something else is holding
 `/dev/video0`. Likely candidates: another mediamtx, `motion`, an open `vlc`

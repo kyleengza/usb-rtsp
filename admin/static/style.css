@@ -68,8 +68,13 @@ section > h2 {
   flex-wrap: wrap;
 }
 .card h3 { margin: 0; font-size: 1.05rem; }
-.card .rtsp-url { margin-left: auto; color: var(--muted); }
-.card .rtsp-url code { background: #0a0d12; padding: 0.1rem 0.4rem; border-radius: 4px; }
+.urls { list-style: none; padding: 0; margin: 0.4rem 0 0.5rem; display: grid; gap: 0.2rem; }
+.urls li { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-size: 0.85rem; }
+.url-label { color: var(--muted); width: 4.5rem; font-weight: 500; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; }
+.urls code { background: #0a0d12; padding: 0.1rem 0.4rem; border-radius: 4px; font-family: ui-monospace, monospace; }
+.urls code a { color: var(--accent); text-decoration: none; }
+.urls code a:hover { text-decoration: underline; }
+.url-note { color: var(--muted); font-style: italic; font-size: 0.78rem; }
 
 .ready-dot {
   width: 0.7rem; height: 0.7rem;
