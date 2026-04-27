@@ -60,7 +60,20 @@
     return false;
   }
 
-  function rebuildPreviewIframe(card, camName) {
+  async function freshStreamCreds() {
+    // Always re-fetch instead of trusting window.__USB_RTSP_STREAM_CREDS__
+    // — that constant is server-rendered at page load and goes stale after
+    // a rotate, leaving the iframe pointing at the old password.
+    try {
+      const r = await fetch("/api/auth/stream-credentials");
+      if (!r.ok) return null;
+      const j = await r.json();
+      if (!j.enabled) return null;
+      return { user: j.user, pass: j.password };
+    } catch { return null; }
+  }
+
+  async function rebuildPreviewIframe(card, camName) {
     const wrap = $(".preview", card);
     if (!wrap) return null;
     const old = $("[data-preview-frame]", wrap);
@@ -69,10 +82,12 @@
     fresh.setAttribute("loading", "lazy");
     fresh.setAttribute("allow", "autoplay");
     fresh.setAttribute("allowfullscreen", "");
-    const creds = window.__USB_RTSP_STREAM_CREDS__;
+    const creds = await freshStreamCreds() || window.__USB_RTSP_STREAM_CREDS__;
     const credsAt = creds ? `${encodeURIComponent(creds.user)}:${encodeURIComponent(creds.pass)}@` : "";
     fresh.src = `http://${credsAt}${location.hostname}:8889/${camName}/?t=${Date.now()}`;
     if (old) old.replaceWith(fresh); else wrap.appendChild(fresh);
+    // Keep the global in sync so URL-list code that still reads it gets fresh values too.
+    if (creds) window.__USB_RTSP_STREAM_CREDS__ = creds;
     return fresh;
   }
 
@@ -135,7 +150,7 @@
         btn.classList.remove("open");
         btn.textContent = "Live preview ▾";
       } else {
-        rebuildPreviewIframe(card, card.dataset.cam);
+        await rebuildPreviewIframe(card, card.dataset.cam);
         wrap.hidden = false;
         btn.classList.add("open");
         btn.textContent = "Hide preview ▴";
@@ -263,7 +278,7 @@
           const ready = await waitForPathReady(name, 15000);
           if (ready) {
             await new Promise(res => setTimeout(res, 800));
-            if (wrap && !wrap.hidden) rebuildPreviewIframe(card, name);
+            if (wrap && !wrap.hidden) await rebuildPreviewIframe(card, name);
             status.textContent = "saved · stream ready";
           } else {
             status.classList.add("err");
