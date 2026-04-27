@@ -630,3 +630,58 @@ def logout() -> Response:
     resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie(auth_lib.COOKIE_NAME, path="/")
     return resp
+
+
+# ─── secret rotation ────────────────────────────────────────────────────────
+
+@app.get("/api/auth/stream-credentials")
+def api_stream_credentials() -> JSONResponse:
+    """Return the active stream user (and password — anyone with a panel
+    cookie can already read this from the dashboard URLs)."""
+    creds = auth_lib.stream_credentials()
+    if not creds:
+        return JSONResponse({"enabled": False})
+    user, password = creds
+    return JSONResponse({"enabled": True, "user": user, "password": password})
+
+
+@app.post("/api/auth/stream-rotate")
+def api_stream_rotate() -> JSONResponse:
+    """Generate a fresh stream password, persist 0600, re-render mediamtx,
+    restart both services. Returns the new password so the caller can
+    surface it before admin restarts and the page reloads."""
+    if not auth_lib.streams_enabled():
+        raise HTTPException(400, "stream auth is not enabled (./install.sh --enable-auth first)")
+
+    import secrets
+    new_pass = secrets.token_urlsafe(24)
+    pf = auth_lib.STREAM_PASS_FILE
+    pf.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(pf, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, new_pass.encode())
+    finally:
+        os.close(fd)
+
+    render_p = subprocess.run(
+        ["python3", "-m", "core.renderer"],
+        cwd=str(REPO_DIR),
+        capture_output=True, text=True, timeout=15,
+    )
+    if render_p.returncode != 0:
+        raise HTTPException(500, f"render failed: {(render_p.stdout + render_p.stderr).strip()}")
+
+    code, _ = systemctl("restart", "usb-rtsp")
+    # Schedule admin restart out-of-band so this response makes it back
+    # before systemd kills us. The panel JS will see the success status,
+    # show the new password, and reload after a settle delay.
+    subprocess.Popen(
+        ["systemctl", "--user", "restart", "usb-rtsp-admin"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    return JSONResponse({
+        "rotated": True,
+        "user": auth_lib.load_config()["streams"].get("user", "stream"),
+        "password": new_pass,
+        "mediamtx_reload": "restart" if code == 0 else "failed",
+    })

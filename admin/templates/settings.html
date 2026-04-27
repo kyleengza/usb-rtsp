@@ -82,6 +82,33 @@
 </section>
 {% endfor %}
 
+<section class="auth-section" id="auth-section">
+  <h2>Authentication</h2>
+  <p class="hint">Configured via <code>./install.sh --enable-auth</code>.
+  The panel logs in via PAM (your Pi user). Streams are gated by a
+  shared <code>stream:&lt;password&gt;</code> credential — rotate it
+  here without touching the installer.</p>
+
+  <div class="auth-state" data-auth-state>
+    <span class="badge" id="auth-stream-status">checking…</span>
+  </div>
+
+  <div class="auth-creds" id="auth-creds" hidden>
+    <div class="auth-row">
+      <span class="auth-label">user</span>
+      <code id="stream-user">—</code>
+    </div>
+    <div class="auth-row">
+      <span class="auth-label">password</span>
+      <code id="stream-pass">●●●●●●●●●●●●●●●●●●●●●●●●</code>
+      <button type="button" data-act="reveal-pass">Show</button>
+      <button type="button" class="copy" id="copy-pass">copy</button>
+      <button type="button" class="danger" data-act="rotate-pass">Rotate</button>
+    </div>
+    <div class="form-status" id="auth-status"></div>
+  </div>
+</section>
+
 <section class="recovery">
   <h2>Service recovery</h2>
 
