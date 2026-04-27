@@ -8,6 +8,7 @@ responsibilities scattered in the old bin/usb-rtsp-render.
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,6 +77,33 @@ def _auth_block() -> dict:
     }
 
 
+def _local_ipv4s() -> list[str]:
+    """Non-loopback, non-link-local IPv4 addresses on this host.
+
+    Used to populate mediamtx's webrtcAdditionalHosts so the SDP answer
+    advertises reachable ICE candidates. Without this, mediamtx picks
+    candidates based on the signaling request's source IP — and because
+    the panel proxies WebRTC signaling via 127.0.0.1, mediamtx ends up
+    advertising only `127.0.0.1:8189` to remote browsers, which then
+    can't ICE-connect.
+    """
+    try:
+        out = subprocess.check_output(
+            ["ip", "-4", "-o", "addr", "show"], text=True, timeout=2
+        )
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return []
+    addrs: set[str] = set()
+    for line in out.splitlines():
+        parts = line.split()
+        for i, p in enumerate(parts):
+            if p == "inet" and i + 1 < len(parts):
+                ip = parts[i + 1].split("/")[0]
+                if ip and not ip.startswith("127.") and not ip.startswith("169.254."):
+                    addrs.add(ip)
+    return sorted(addrs)
+
+
 def _global_buffers(profiles: dict, plugin_paths: dict, plugins: list) -> tuple[int, int]:
     """Pick the most generous buffer/queue from the active transport profiles
     referenced by any plugin's source list. We don't know which profile each
@@ -131,6 +159,7 @@ def build_config() -> dict:
         "webrtcAddress": ":8889",
         "webrtcAllowOrigin": "*",
         "webrtcLocalUDPAddress": ":8189",
+        **({"webrtcAdditionalHosts": _local_ipv4s()} if _local_ipv4s() else {}),
         "rtmp": False,
         "srt": False,
         "paths": paths or {},
