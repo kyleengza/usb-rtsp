@@ -43,6 +43,10 @@ def render_paths(ctx) -> dict[str, Any]:
         url = (src.get("url") or "").strip()
         if not name or not url:
             continue
+        # disabled sources stay in sources.yml so the user can re-enable
+        # them from the panel; we just don't emit a mediamtx path.
+        if src.get("enabled") is False:
+            continue
         path_cfg: dict[str, Any] = {
             "source": _embed_creds(url, src.get("user"), src.get("pass")),
             "sourceOnDemand": True,         # only pull when something subscribes

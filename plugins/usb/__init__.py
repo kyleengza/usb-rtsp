@@ -78,6 +78,16 @@ def _build_card_data(ctx) -> dict:
     }
 
 
+def list_inputs(ctx) -> list[dict]:
+    """Settings-page recap: name + enabled + label per camera."""
+    cams = load_cameras(ctx.plugin.config_dir).get("cameras", [])
+    return [{
+        "name": c["name"],
+        "enabled": c.get("enabled") is not False,
+        "label": f"{c.get('format','?')} {c.get('width','?')}x{c.get('height','?')}@{c.get('fps','?')}",
+    } for c in cams]
+
+
 def section_context(ctx, request) -> dict:
     """Plugin-supplied context merged into the dashboard template render.
 

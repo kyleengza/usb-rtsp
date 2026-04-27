@@ -96,4 +96,30 @@ def make_router(ctx) -> APIRouter:
             raise HTTPException(500, f"render failed: {msg}")
         return JSONResponse({"deleted": name, "reload": _reload_mediamtx()})
 
+    @router.post("/sources/{name}/enable")
+    def enable_source(name: str) -> JSONResponse:
+        return _set_source_enabled(name, True)
+
+    @router.post("/sources/{name}/disable")
+    def disable_source(name: str) -> JSONResponse:
+        return _set_source_enabled(name, False)
+
+    def _set_source_enabled(name: str, enable: bool) -> JSONResponse:
+        if not is_valid_name(name):
+            raise HTTPException(400, f"invalid name: {name!r}")
+        sources = load_sources(cfg_dir)
+        found = False
+        for s in sources:
+            if s.get("name") == name:
+                s["enabled"] = enable
+                found = True
+                break
+        if not found:
+            raise HTTPException(404, "no such source")
+        _save_sources(cfg_dir, sources)
+        ok, msg = _render_config()
+        if not ok:
+            raise HTTPException(500, f"render failed: {msg}")
+        return JSONResponse({"name": name, "enabled": enable, "reload": _reload_mediamtx()})
+
     return router

@@ -387,13 +387,23 @@ def settings_page(request: Request) -> HTMLResponse:
     enabled = plugin_loader.read_enabled_set()
     plugins = []
     for p in plugin_loader.discover_plugins():
-        plugins.append({
+        meta = {
             "name": p.name,
             "description": p.description,
             "version": p.version,
             "default_enabled": p.default_enabled,
             "enabled": p.name in enabled,
-        })
+            "inputs": [],
+        }
+        if p.name in enabled:
+            mod = _plugin_module(p.name)
+            list_inputs_fn = getattr(mod, "list_inputs", None) if mod else None
+            if callable(list_inputs_fn):
+                try:
+                    meta["inputs"] = list(list_inputs_fn(plugin_loader._make_ctx(p, templates)))
+                except Exception as e:
+                    print(f"[settings] {p.name}.list_inputs raised: {e}")
+        plugins.append(meta)
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "plugins_meta": plugins,

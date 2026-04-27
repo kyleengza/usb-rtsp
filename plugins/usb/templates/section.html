@@ -6,10 +6,15 @@
 
   {% for c in cards %}
   {% set cam = c.config %}
-  <article class="card{% if not c.is_present %} missing{% endif %}" data-cam="{{ cam.name }}" data-plugin="usb">
+  {% set is_disabled = cam.enabled is defined and not cam.enabled %}
+  <article class="card{% if not c.is_present %} missing{% endif %}{% if is_disabled %} input-disabled{% endif %}" data-cam="{{ cam.name }}" data-plugin="usb">
     <header>
       <h3>{{ cam.name }}</h3>
       <span class="ready-dot" data-ready></span>
+      <label class="switch" title="enable / disable {{ cam.name }}">
+        <input type="checkbox" data-input-toggle="usb/{{ cam.name }}" {% if not is_disabled %}checked{% endif %}>
+        <span class="slider"></span>
+      </label>
       <div class="card-tabs">
         <button type="button" class="card-tab" data-act="preview">Live preview ▾</button>
         <button type="button" class="card-tab" data-act="settings">Settings ▾</button>

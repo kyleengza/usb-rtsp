@@ -13,6 +13,15 @@ __all__ = ["register", "render_paths"]
 PLUGIN_DIR = Path(__file__).resolve().parent
 
 
+def list_inputs(ctx) -> list[dict]:
+    sources = load_sources(ctx.plugin.config_dir)
+    return [{
+        "name": s.get("name", ""),
+        "enabled": s.get("enabled") is not False,
+        "label": s.get("url", ""),
+    } for s in sources if s.get("name")]
+
+
 def section_context(ctx, request) -> dict:
     """Per-render data the section template uses."""
     return {

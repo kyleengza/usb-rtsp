@@ -60,8 +60,24 @@
       <dt>state</dt>    <dd>{{ 'enabled' if p.enabled else 'disabled' }} now</dd>
       <dt>config</dt>   <dd><code>~/.config/usb-rtsp/{{ p.name }}/</code></dd>
     </dl>
-    {# Future: each plugin can ship templates/settings_section.html
-       and we'll {% include p.name + '/settings_section.html' %} here. #}
+
+    {% if p.inputs %}
+    <h3 class="inputs-heading">Inputs</h3>
+    <ul class="plugin-inputs">
+      {% for inp in p.inputs %}
+      <li class="plugin-input{% if not inp.enabled %} disabled{% endif %}" data-input="{{ p.name }}/{{ inp.name }}">
+        <span class="input-name">{{ inp.name }}</span>
+        <span class="input-label">{{ inp.label }}</span>
+        <label class="switch" title="enable / disable {{ inp.name }}">
+          <input type="checkbox" data-input-toggle="{{ p.name }}/{{ inp.name }}" {% if inp.enabled %}checked{% endif %}>
+          <span class="slider"></span>
+        </label>
+      </li>
+      {% endfor %}
+    </ul>
+    {% elif p.enabled %}
+    <p class="hint">No inputs configured for {{ p.name }} yet.</p>
+    {% endif %}
   </div>
 </section>
 {% endfor %}

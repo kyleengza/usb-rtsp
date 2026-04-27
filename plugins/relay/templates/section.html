@@ -8,10 +8,15 @@
   {% endif %}
 
   {% for s in relay_sources %}
-  <article class="card" data-relay="{{ s.name }}">
+  {% set is_disabled = s.enabled is defined and not s.enabled %}
+  <article class="card{% if is_disabled %} input-disabled{% endif %}" data-relay="{{ s.name }}">
     <header>
       <h3>{{ s.name }}</h3>
       <span class="ready-dot" data-ready></span>
+      <label class="switch" title="enable / disable {{ s.name }}">
+        <input type="checkbox" data-input-toggle="relay/{{ s.name }}" {% if not is_disabled %}checked{% endif %}>
+        <span class="slider"></span>
+      </label>
       <button type="button" class="card-tab" data-act="delete-relay">Remove</button>
     </header>
     <ul class="urls">

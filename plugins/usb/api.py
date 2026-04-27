@@ -178,6 +178,36 @@ def make_router(ctx) -> APIRouter:
             raise HTTPException(502, f"snap failed: {p.stderr.strip() or p.stdout.strip()}")
         return FileResponse(out, media_type="image/jpeg")
 
+    @router.post("/cam/{name}/enable")
+    def enable_cam(name: str) -> JSONResponse:
+        return _set_cam_enabled(name, True)
+
+    @router.post("/cam/{name}/disable")
+    def disable_cam(name: str) -> JSONResponse:
+        return _set_cam_enabled(name, False)
+
+    def _set_cam_enabled(name: str, enable: bool) -> JSONResponse:
+        _validate_cam_name(name)
+        from .render import load_cameras
+        doc = load_cameras(cfg_dir)
+        found = False
+        for c in doc.get("cameras", []):
+            if c["name"] == name:
+                c["enabled"] = enable
+                found = True
+                break
+        if not found:
+            raise HTTPException(404, "no such camera")
+        _save_cameras(cfg_dir, doc)
+        ok, msg = _render_config()
+        if not ok:
+            raise HTTPException(500, f"render failed: {msg}")
+        return JSONResponse({
+            "name": name,
+            "enabled": enable,
+            "reload": _reload_mediamtx(),
+        })
+
     @router.post("/rescan")
     def rescan() -> JSONResponse:
         detected = _detect_cameras()

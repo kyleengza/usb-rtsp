@@ -272,8 +272,51 @@ async function refreshHost() {
 
 // ─── boot ──────────────────────────────────────────────────────────────────
 
+// ─── per-input enable/disable (cameras, relay sources, ...) ───────────────
+// Wherever a slider has data-input-toggle="<plugin>/<name>", clicking it
+// flips the input via /api/<plugin>/(cam|sources)/<name>/(enable|disable).
+// The endpoint names happen to follow a regular pattern that we encode here.
+
+const INPUT_ROUTE = {
+  usb:   (name, action) => `/api/usb/cam/${encodeURIComponent(name)}/${action}`,
+  relay: (name, action) => `/api/relay/sources/${encodeURIComponent(name)}/${action}`,
+};
+
+function wireInputToggles() {
+  $$('input[data-input-toggle]').forEach(box => {
+    if (box.dataset._wired) return;
+    box.dataset._wired = "1";
+    box.addEventListener("change", async () => {
+      const [plugin, name] = (box.dataset.inputToggle || "").split("/");
+      const route = INPUT_ROUTE[plugin];
+      if (!route) {
+        console.warn("no route for plugin", plugin);
+        return;
+      }
+      const enable = box.checked;
+      box.disabled = true;
+      try {
+        const r = await fetch(route(name, enable ? "enable" : "disable"), { method: "POST" });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+        // visual: dim/undim the card / row
+        const host = box.closest("[data-cam], [data-relay], .plugin-input");
+        if (host) host.classList.toggle("input-disabled", !enable);
+        if (host) host.classList.toggle("disabled", !enable);
+      } catch (err) {
+        box.checked = !enable;
+        alert(`${plugin}/${name} toggle failed: ${err.message}`);
+      } finally {
+        box.disabled = false;
+      }
+    });
+  });
+}
+
+
 document.addEventListener("DOMContentLoaded", () => {
   wireUpRecovery();
+  wireInputToggles();
   refreshStatus();
   refreshSessions();
   refreshHost();

@@ -105,6 +105,10 @@ def render_paths(ctx) -> dict[str, Any]:
 
     out: dict[str, Any] = {}
     for cam in doc.get("cameras", []):
+        # disabled cams stay in cameras.yml so the user can re-enable from
+        # the panel; we just don't emit a mediamtx path for them.
+        if cam.get("enabled") is False:
+            continue
         prof = profiles.get(cam.get("profile") or "balanced", {})
         qprof = qpresets.get(cam.get("quality") or "medium", {})
         out[cam["name"]] = {
