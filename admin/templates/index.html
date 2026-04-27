@@ -82,13 +82,21 @@
 
       <label>Resolution
         <select name="resolution" data-current="{{ cam.width }}x{{ cam.height }}">
-          <option value="{{ cam.width }}x{{ cam.height }}" selected>{{ cam.width }}×{{ cam.height }}</option>
+          {% for s in c.current_sizes %}
+            {% set v = s.width ~ 'x' ~ s.height %}
+            <option value="{{ v }}" {% if s.width == cam.width and s.height == cam.height %}selected{% endif %}>{{ s.width }}×{{ s.height }}</option>
+          {% endfor %}
+          {% if not c.current_sizes %}
+            <option value="{{ cam.width }}x{{ cam.height }}" selected>{{ cam.width }}×{{ cam.height }}</option>
+          {% endif %}
         </select>
       </label>
 
       <label>FPS
         <select name="fps" data-current="{{ cam.fps }}">
-          <option value="{{ cam.fps }}" selected>{{ cam.fps }}</option>
+          {% for f in c.current_fps_options %}
+            <option value="{{ f }}" {% if f == cam.fps %}selected{% endif %}>{{ f }}</option>
+          {% endfor %}
         </select>
       </label>
 
@@ -118,6 +126,24 @@
     </form>
 
     <img class="snap-preview" hidden alt="">
+
+    {% if c.available %}
+    <details class="native-modes">
+      <summary>Native modes from camera ({{ c.available | sum(attribute='sizes', start=[]) | length }} total)</summary>
+      <div class="modes-grid">
+        {% for f in c.available %}
+        <div class="mode-block">
+          <strong>{{ f.format }}</strong>
+          <ul>
+            {% for s in f.sizes %}
+              <li>{{ s.width }}×{{ s.height }} @ {{ s.fps | join(', ') }} fps</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
 
     <script type="application/json" class="caps">{{ c.available | tojson }}</script>
   </article>

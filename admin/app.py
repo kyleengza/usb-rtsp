@@ -171,10 +171,25 @@ def dashboard(request: Request) -> HTMLResponse:
     cards = []
     for cam in cams_doc.get("cameras", []):
         det = detected_by_id.get(cam["by_id"], {})
+        formats = det.get("formats", [])
+        # find sizes valid for the camera's currently configured format,
+        # so the template can server-side render the resolution dropdown
+        # with every option (rather than just the current one) and the
+        # fps dropdown with everything supported at the current resolution.
+        cur_fmt_rec = next((f for f in formats if f["format"] == cam["format"]), None)
+        cur_sizes = cur_fmt_rec["sizes"] if cur_fmt_rec else []
+        cur_size_rec = next(
+            (s for s in cur_sizes
+             if s["width"] == cam["width"] and s["height"] == cam["height"]),
+            None,
+        )
+        cur_fps_options = cur_size_rec["fps"] if cur_size_rec else [cam["fps"]]
         cards.append({
             "config": cam,
             "card_name": det.get("card", "(camera unplugged?)"),
-            "available": det.get("formats", []),
+            "available": formats,
+            "current_sizes": cur_sizes,
+            "current_fps_options": sorted(set(cur_fps_options + [cam["fps"]])),
             "is_present": cam["by_id"] in detected_by_id,
         })
 

@@ -147,6 +147,14 @@ button.danger:hover { background: var(--err); color: white; }
   border-radius: 4px;
 }
 
+.native-modes { margin-top: 0.6rem; font-size: 0.8rem; }
+.native-modes summary { cursor: pointer; color: var(--muted); padding: 0.2rem 0; }
+.native-modes summary:hover { color: var(--accent); }
+.modes-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.6rem; padding: 0.5rem 0; }
+.mode-block strong { color: var(--accent); display: block; margin-bottom: 0.2rem; }
+.mode-block ul { list-style: none; padding: 0; margin: 0; }
+.mode-block li { color: var(--muted); font-family: ui-monospace, monospace; font-size: 0.78rem; }
+
 .streams table {
   width: 100%;
   border-collapse: collapse;
