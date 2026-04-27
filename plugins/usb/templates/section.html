@@ -27,12 +27,13 @@
       <iframe data-preview-frame loading="lazy" allow="autoplay" allowfullscreen></iframe>
     </div>
     {% set creds_at = (stream_user ~ ':' ~ stream_pass ~ '@') if stream_auth else '' %}
+    {% set webrtc_url = ('http://' ~ host ~ ':8080/preview/' ~ cam.name ~ '/') if stream_auth else ('http://' ~ host ~ ':8889/' ~ cam.name ~ '/') %}
     <ul class="urls">
       <li>
         <span class="url-label url-best">WebRTC</span>
-        <code><a href="http://{{ creds_at }}{{ host }}:8889/{{ cam.name }}/" target="_blank" rel="noopener">http://{{ creds_at }}{{ host }}:8889/{{ cam.name }}/</a></code>
-        <button type="button" class="copy" data-copy="http://{{ creds_at }}{{ host }}:8889/{{ cam.name }}/">copy</button>
-        <span class="url-note">browser-native, &lt;1 s lag — recommended</span>
+        <code><a href="{{ webrtc_url }}" target="_blank" rel="noopener">{{ webrtc_url }}</a></code>
+        <button type="button" class="copy" data-copy="{{ webrtc_url }}">copy</button>
+        <span class="url-note">{% if stream_auth %}via panel proxy — open in a tab where you're logged in{% else %}browser-native, &lt;1 s lag — recommended{% endif %}</span>
       </li>
       <li>
         <span class="url-label">HLS</span>
