@@ -6,8 +6,11 @@ modes:
   default:  source: <upstream_url> + sourceOnDemand
             (mediamtx pulls and re-broadcasts; zero CPU re-encode)
 
-  encode:   runOnInit: ffmpeg -i <upstream> ... -f rtsp 127.0.0.1/<name>
-            (downsize / re-encode the upstream before re-broadcasting)
+  encode:   source: publisher + runOnDemand: ffmpeg ... -f rtsp 127.0.0.1/<name>
+            (downsize / re-encode upstream — only while a reader is connected,
+             matching the non-encode sourceOnDemand semantics so an idle relay
+             doesn't peg the CPU or OOM the host. Restart=False + ffmpeg
+             -stimeout cap the respawn churn when upstream is unreachable.)
 """
 from __future__ import annotations
 
@@ -63,21 +66,40 @@ def _ffmpeg_transcode_cmd(src: dict, qprof: dict) -> str:
     fps_for_gop = fps or 30
     gop_frames = max(1, gop_seconds * fps_for_gop)
 
+    # Default to 1280x720 when caller didn't pin a resolution. Without a
+    # cap, ffmpeg encodes at upstream resolution — a 1080p60 (or 4K) feed
+    # spikes Pi 5 CPU/power hard enough to brown the PSU on startup. The
+    # scale filter preserves aspect ratio; force_original_aspect_ratio
+    # =decrease + ensures-even-dimensions handle non-16:9 sources.
+    if not (w or h):
+        w, h = 1280, 720
     vf_parts = ["format=yuv420p", "scale=in_range=full:out_range=tv"]
     if w and h:
-        vf_parts.insert(0, f"scale={w}:{h}")
+        vf_parts.insert(0, f"scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2")
     if fps:
         vf_parts.append(f"fps={fps}")
     vf = ",".join(vf_parts)
 
+    # -timeout caps how long ffmpeg will block on the upstream socket
+    # before erroring out (microseconds; was -stimeout pre-ffmpeg-5).
+    # Without it, an unreachable upstream wedges ffmpeg for ~30s while
+    # a reader (and runOnDemand) holds the path open, which on a Pi 5
+    # can pile up enough respawn churn to brown out / OOM the host.
     common_in = (
         f"-hide_banner -loglevel warning "
         f"-rtsp_transport {transport} "
+        f"-timeout 5000000 "
         f"-i {upstream}"
     )
+    # -threads 2 caps libx264 to half the Pi 5's cores. Without it,
+    # x264 spawns one thread per core (4) and the all-core spike on
+    # ffmpeg startup can sag a marginal PSU enough to hard-reboot the
+    # host before any logs flush. Two threads is plenty for 720p
+    # ultrafast and leaves headroom for mediamtx + the panel.
     codec = (
         f"-an -vf {vf} "
         f"-c:v libx264 -preset {x264_preset} -tune zerolatency "
+        f"-threads 2 "
         f"-profile:v {h264_profile} -level 3.1 "
         f"-pix_fmt yuv420p -color_range tv "
         f"-b:v {bitrate_k}k -maxrate {bitrate_k}k -bufsize {bitrate_k}k "
@@ -106,10 +128,18 @@ def render_paths(ctx) -> dict[str, Any]:
         encode = src.get("encode")
         if encode:
             qprof = qpresets.get(encode.get("preset") or "medium", {})
+            # runOnDemandRestart=False: when ffmpeg dies (e.g. upstream
+            # offline), don't immediately respawn while a reader is still
+            # attached. The reader's player has to retry the path, which
+            # gives a much slower (and self-limiting) re-trigger loop —
+            # the brown-out we saw came from mediamtx tight-respawning
+            # ffmpeg every few seconds against a dead upstream.
             out[name] = {
                 "source": "publisher",
-                "runOnInit": _ffmpeg_transcode_cmd(src, qprof),
-                "runOnInitRestart": True,
+                "runOnDemand": _ffmpeg_transcode_cmd(src, qprof),
+                "runOnDemandRestart": False,
+                "runOnDemandStartTimeout": "15s",
+                "runOnDemandCloseAfter": "10s",
             }
         else:
             path_cfg: dict[str, Any] = {
