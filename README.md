@@ -117,7 +117,7 @@ So `cam0 @ 1080p / quality=high` → 2500 × 1.5 = **3750 kbps**.
 | `bitrate_kbps` | int 100-20000 | always | Replaces `factor × baseline`. |
 | `x264_preset` | enum | h264 only | Picks libx264 preset directly. Higher (slower) = tighter bitstream at the same bitrate but more CPU. |
 | `gop_seconds` | int 1-10 | h264 only | Keyframe interval. Smaller = faster reconnect/seek, larger stream; bigger = more efficient compression. |
-| `bframes` | 0-3 | h264 only | B-frames. >0 auto-promotes `-profile:v` to `main`. Better compression, slightly higher latency. |
+| `bframes` | 0-3 | h264 only | B-frames. >0 auto-promotes `-profile:v` to `main` and **disables WebRTC viewers** (mediamtx force-closes the session — WebRTC's H.264 spec is Constrained Baseline only). RTSP and HLS still work. Leave at 0 unless you don't need WebRTC. |
 | `mjpeg_qv` | int 1-31 | mjpeg only | ffmpeg `-q:v` (1 = best, 31 = worst). |
 
 Blank in the panel / absent in `cameras.yml` = use the Quality preset's value.

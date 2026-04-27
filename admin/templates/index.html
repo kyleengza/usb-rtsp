@@ -157,6 +157,7 @@
                 <option value="{{ n }}" {% if cam.bframes is defined and cam.bframes == n %}selected{% endif %}>{{ n }}</option>
               {% endfor %}
             </select>
+            <small><strong>warning:</strong> any value &gt; 0 breaks WebRTC viewers (only baseline allowed). RTSP / HLS unaffected.</small>
           </label>
           <label class="adv adv-mjpeg">MJPEG q:v
             <input type="number" name="mjpeg_qv" min="1" max="31" step="1"

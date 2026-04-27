@@ -27,9 +27,14 @@ medium:
   mjpeg_qv: 3
 
 high:
-  description: better quality, more CPU (~1.2 cores @ 1080p30)
+  # NOTE: bframes MUST stay 0. WebRTC's H.264 negotiation (RFC 7742) only
+  # accepts Constrained Baseline; mediamtx force-closes any reader trying
+  # to consume an H.264 stream with B-frames. We get the quality bump
+  # from veryfast preset (better rate-distortion at the same bitrate) +
+  # 1.6× bitrate budget instead.
+  description: better quality, more CPU (~1.2 cores @ 1080p30) — WebRTC-safe
   preset: veryfast
-  bitrate_factor: 1.5
+  bitrate_factor: 1.6
   gop_seconds: 4
-  bframes: 1
+  bframes: 0
   mjpeg_qv: 2
