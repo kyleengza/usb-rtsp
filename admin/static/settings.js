@@ -32,4 +32,17 @@
       }
     });
   });
+
+  // ─── plugin block fold/unfold ──────────────────────────────────────────
+  $$('[data-act=fold-plugin]').forEach(btn => {
+    btn.addEventListener("click", () => {
+      const block = btn.closest('.plugin-block');
+      const body = block?.querySelector('.plugin-body');
+      if (!body) return;
+      const isOpen = !body.hidden;
+      body.hidden = isOpen;
+      btn.classList.toggle("open", !isOpen);
+      btn.textContent = isOpen ? "Details ▾" : "Hide ▴";
+    });
+  });
 })();

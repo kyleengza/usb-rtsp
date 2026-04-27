@@ -28,28 +28,43 @@
 
 <main class="settings-main">
 
-<section class="plugins-section">
+<div class="plugins-intro">
   <h2>Plugins</h2>
-  <p class="hint">Toggling a plugin re-renders <code>mediamtx.yml</code> and
-  restarts both services. The page will reload itself a few seconds after.</p>
-  <div class="plugin-list">
-    {% for p in plugins_meta %}
-    <article class="plugin-row" data-plugin-name="{{ p.name }}">
-      <div class="plugin-meta">
-        <strong>{{ p.name }}</strong>
-        {% if p.default_enabled %}<span class="hint">default-on</span>{% endif %}
-        <span class="ver">v{{ p.version }}</span>
-        <div class="plugin-desc">{{ p.description }}</div>
-      </div>
-      <label class="switch">
-        <input type="checkbox" data-plugin-toggle="{{ p.name }}" {% if p.enabled %}checked{% endif %}>
-        <span class="slider"></span>
-      </label>
-    </article>
-    {% endfor %}
-  </div>
+  <p class="hint">Toggle a plugin to enable or disable it.
+  Re-renders <code>mediamtx.yml</code> and restarts both services;
+  the page reloads itself a few seconds after.</p>
   <div class="form-status" id="plugins-status"></div>
+</div>
+
+{% for p in plugins_meta %}
+<section class="plugin-block" data-plugin-name="{{ p.name }}">
+  <header>
+    <h2>{{ p.name }}</h2>
+    <span class="ver">v{{ p.version }}</span>
+    {% if p.default_enabled %}<span class="hint-chip">default-on</span>{% endif %}
+    <span class="plugin-status badge {% if p.enabled %}ok{% endif %}" data-plugin-state>
+      {{ 'enabled' if p.enabled else 'disabled' }}
+    </span>
+    <label class="switch" title="enable / disable">
+      <input type="checkbox" data-plugin-toggle="{{ p.name }}" {% if p.enabled %}checked{% endif %}>
+      <span class="slider"></span>
+    </label>
+    <button type="button" class="card-tab" data-act="fold-plugin">Details ▾</button>
+  </header>
+  <div class="plugin-body" hidden>
+    <p class="plugin-desc">{{ p.description }}</p>
+    <dl class="plugin-kv">
+      <dt>name</dt>     <dd><code>{{ p.name }}</code></dd>
+      <dt>version</dt>  <dd><code>v{{ p.version }}</code></dd>
+      <dt>default</dt>  <dd>{{ 'enabled' if p.default_enabled else 'disabled' }}</dd>
+      <dt>state</dt>    <dd>{{ 'enabled' if p.enabled else 'disabled' }} now</dd>
+      <dt>config</dt>   <dd><code>~/.config/usb-rtsp/{{ p.name }}/</code></dd>
+    </dl>
+    {# Future: each plugin can ship templates/settings_section.html
+       and we'll {% include p.name + '/settings_section.html' %} here. #}
+  </div>
 </section>
+{% endfor %}
 
 <section class="recovery">
   <h2>Service recovery</h2>

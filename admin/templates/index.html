@@ -37,18 +37,6 @@
   {% endif %}
 {% endfor %}
 
-<section class="streams">
-  <h2>Active streams</h2>
-  <table>
-    <thead>
-      <tr><th>protocol</th><th>path</th><th>peer</th><th>state</th><th>transport</th><th>tx</th><th>rx</th><th>duration</th></tr>
-    </thead>
-    <tbody id="sessions-tbody">
-      <tr class="empty"><td colspan="8">no active sessions</td></tr>
-    </tbody>
-  </table>
-</section>
-
 <section class="host">
   <h2>Host</h2>
   <div class="host-grid">
@@ -93,6 +81,18 @@
       <div class="host-sub">thermal zone 0</div>
     </div>
   </div>
+</section>
+
+<section class="streams">
+  <h2>Active streams</h2>
+  <table>
+    <thead>
+      <tr><th>protocol</th><th>path</th><th>peer</th><th>state</th><th>transport</th><th>tx</th><th>rx</th><th>duration</th></tr>
+    </thead>
+    <tbody id="sessions-tbody">
+      <tr class="empty"><td colspan="8">no active sessions</td></tr>
+    </tbody>
+  </table>
 </section>
 
 </main>
