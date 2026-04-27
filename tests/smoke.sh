@@ -13,6 +13,20 @@ pass() { printf '\033[32m✓\033[0m %s\n' "$*"; }
 fail() { printf '\033[31m✗\033[0m %s\n' "$*"; exit 1; }
 info() { printf '\033[36m·\033[0m %s\n' "$*"; }
 
+# If panel auth is on, forge a valid cookie so the smoke test can hit
+# protected endpoints. Otherwise leave the cookie header empty.
+COOKIE_ARG=()
+if [[ -f "$CONFIG_DIR/auth.yml" ]] && grep -q "enabled: true" "$CONFIG_DIR/auth.yml"; then
+  TEST_COOKIE="$(USB_RTSP_REPO=$REPO_DIR python3 -c "
+import sys; sys.path.insert(0, '$REPO_DIR')
+from core import auth
+v, _ = auth.make_cookie('smoke-test')
+print(v)
+")"
+  COOKIE_ARG=(--cookie "usb-rtsp-auth=$TEST_COOKIE")
+  info "panel auth on — forged a smoke-test cookie"
+fi
+
 # 1. services up
 info "services up"
 systemctl --user is-active usb-rtsp.service       >/dev/null || fail "usb-rtsp.service not active"
@@ -66,14 +80,14 @@ pass "admin healthy"
 
 # 8. admin /api/status returns something sensible
 info "admin /api/status"
-status_json="$(curl -fsS http://127.0.0.1:8080/api/status)"
+status_json="$(curl -fsS "${COOKIE_ARG[@]}" http://127.0.0.1:8080/api/status)"
 echo "$status_json" | python3 -c 'import json, sys; d=json.load(sys.stdin); assert d["services"]["mediamtx"]=="active"' \
   || fail "status JSON doesn't report mediamtx active"
 pass "status reports mediamtx active"
 
 # 9. admin / dashboard renders
 info "admin GET /"
-curl -fsS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/ | grep -q '^200$' || fail "dashboard didn't return 200"
+curl -fsS -o /dev/null -w '%{http_code}' "${COOKIE_ARG[@]}" http://127.0.0.1:8080/ | grep -q '^200$' || fail "dashboard didn't return 200"
 pass "dashboard renders"
 
 echo
