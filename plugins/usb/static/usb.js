@@ -83,10 +83,17 @@
     fresh.setAttribute("allow", "autoplay");
     fresh.setAttribute("allowfullscreen", "");
     const creds = await freshStreamCreds() || window.__USB_RTSP_STREAM_CREDS__;
-    const credsAt = creds ? `${encodeURIComponent(creds.user)}:${encodeURIComponent(creds.pass)}@` : "";
-    fresh.src = `http://${credsAt}${location.hostname}:8889/${camName}/?t=${Date.now()}`;
+    // Use ?user=&pass= query auth, NOT user:pass@host. Modern browsers strip
+    // url-embedded credentials from iframe src for cross-origin security
+    // (panel = :8080, mediamtx WebRTC = :8889 — different ports, different
+    // origins). Query-string auth survives the strip and mediamtx accepts it
+    // on every protocol endpoint, including the WHEP negotiation that
+    // mediamtx's bundled HTML player issues from inside the iframe.
+    const credQS = creds
+      ? `&user=${encodeURIComponent(creds.user)}&pass=${encodeURIComponent(creds.pass)}`
+      : "";
+    fresh.src = `http://${location.hostname}:8889/${camName}/?t=${Date.now()}${credQS}`;
     if (old) old.replaceWith(fresh); else wrap.appendChild(fresh);
-    // Keep the global in sync so URL-list code that still reads it gets fresh values too.
     if (creds) window.__USB_RTSP_STREAM_CREDS__ = creds;
     return fresh;
   }
