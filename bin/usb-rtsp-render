@@ -49,12 +49,37 @@ def ffmpeg_input_format(fourcc: str) -> str:
     return V4L2_TO_FFMPEG_INPUT_FORMAT.get(fourcc.upper(), fourcc.lower())
 
 
+def h264_bitrate(width: int, height: int) -> str:
+    """Sensible bitrate target for libx264 ultrafast given a resolution."""
+    pixels = width * height
+    if pixels >= 1920 * 1080: return "4M"
+    if pixels >= 1280 * 720:  return "2500k"
+    if pixels >= 640 * 480:   return "1200k"
+    return "800k"
+
+
 def ffmpeg_cmd(cam: dict, profile: dict) -> str:
-    """Build the ffmpeg command for a camera's runOnInit."""
+    """Build the ffmpeg command for a camera's runOnInit.
+
+    `format` is the v4l2 *input* format (what the camera produces).
+    `encode` is the *output* codec we ship to mediamtx over RTSP:
+
+      - "h264"   — libx264 ultrafast (universal compat; default for MJPG/YUYV)
+      - "mjpeg"  — RFC 2435 RTP/JPEG (lighter CPU but fragile across phones,
+                   esp. with cheap UVC cams that emit nonstandard JPEG)
+      - "copy"   — passthrough (only valid when input format is already a
+                   codec the RTSP server accepts: native H264 cams mostly)
+
+    H.264 is the default because MJPEG-over-RTSP (RFC 2435) can't express
+    the JPEG quirks most cheap webcams produce — mediamtx drops fragments
+    and mobile players (VLC Android) glitch / disconnect. libx264 ultrafast
+    at 1080p30 stays under one Cortex-A76 core on a Pi 5.
+    """
     by_id_path = f"/dev/v4l/by-id/{cam['by_id']}"
     fmt = cam["format"]
     w, h, fps = cam["width"], cam["height"], cam["fps"]
     transport = profile["transport"]
+    encode = cam.get("encode") or default_encode(fmt)
 
     common_in = (
         f"-hide_banner -loglevel warning "
@@ -67,20 +92,28 @@ def ffmpeg_cmd(cam: dict, profile: dict) -> str:
         f"rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH"
     )
 
-    if fmt == "MJPG":
+    if encode == "copy":
         codec = "-c copy"
-    elif fmt == "YUYV":
-        # transcode to mjpeg (q:v 3 = high quality, very low CPU)
-        codec = "-c:v mjpeg -q:v 3"
-    elif fmt == "H264":
-        codec = "-c copy"  # passthrough if camera produces H264 natively
-    elif fmt == "H264-encode":
-        # CPU-only on Pi 5 (no HW encoder); only viable at lower resolutions.
-        codec = "-c:v libx264 -preset ultrafast -tune zerolatency -b:v 4M -g 30"
+    elif encode == "mjpeg":
+        codec = "-c:v mjpeg -q:v 3 -huffman default"
+    elif encode == "h264":
+        bitrate = h264_bitrate(w, h)
+        codec = (
+            f"-c:v libx264 -preset ultrafast -tune zerolatency "
+            f"-pix_fmt yuv420p -b:v {bitrate} -maxrate {bitrate} -bufsize {bitrate} "
+            f"-g {fps * 2} -keyint_min {fps}"
+        )
     else:
         codec = "-c copy"
 
     return f"ffmpeg {common_in} {codec} {common_out}"
+
+
+def default_encode(fmt: str) -> str:
+    """Pick a sensible output encode for a given v4l2 input format."""
+    if fmt == "H264":
+        return "copy"
+    return "h264"
 
 
 def build_config(cameras_doc: dict, profiles_doc: dict) -> dict:
@@ -146,6 +179,7 @@ def seed_cameras_from_detect(detect_path: Path | None = None) -> dict:
             "width": d["width"],
             "height": d["height"],
             "fps": d["fps"],
+            "encode": default_encode(d["format"]),
             "profile": "balanced",
         })
     return {"cameras": cams}

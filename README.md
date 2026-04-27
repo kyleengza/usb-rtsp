@@ -57,6 +57,25 @@ unless that file doesn't exist (in which case it auto-detects).
 - **mediamtx control API:** `http://127.0.0.1:9997/v3/...` (loopback only — used
   by the admin panel; not exposed to the LAN)
 
+## Output codec (`encode` per camera)
+
+`cameras.yml` has an `encode` field per camera, mapped to the codec that
+RTSP clients actually receive. The admin panel's "Encode" dropdown writes
+the same field.
+
+| `encode` | What it does | CPU on Pi 5 (1080p30) | Compat |
+|---|---|---|---|
+| `h264` *(default)* | libx264 ultrafast transcode | ~70 % of one A76 core | Universal — VLC Android, every CCTV app, every player |
+| `mjpeg` | RFC 2435 RTP/JPEG re-encode | ~10-15 % of one core | Desktop VLC (TCP), ffplay; flaky on Android |
+| `copy` | passthrough (no encode) | ~0 % | Only safe when `format: H264` (native-H.264 webcams) |
+
+Why H.264 by default: cheap UVC webcams produce JPEG with restart markers
+and nonstandard Huffman tables that aren't RFC 2435-compliant. mediamtx
+silently drops fragments → mobile players (esp. VLC Android) glitch or
+disconnect after one frame. Transcoding to H.264 dodges the issue entirely
+and the CPU cost on a Pi 5 stays under one core. Use `mjpeg` if your camera
+is known clean *and* you only consume from desktop ffplay/VLC.
+
 ## Quality / smoothing profiles
 
 Each camera entry has a `profile` key, mapped from `etc/profiles.yml`:

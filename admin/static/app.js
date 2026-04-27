@@ -159,6 +159,7 @@ function wireUpCard(card) {
       width: parseInt(w, 10),
       height: parseInt(h, 10),
       fps: parseInt(fd.get("fps"), 10),
+      encode: fd.get("encode") || "h264",
       profile: fd.get("profile"),
     };
 

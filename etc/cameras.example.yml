@@ -4,8 +4,18 @@
 # `by_id` is the stable /dev/v4l/by-id/<...>-video-index0 leaf — survives unplug/replug
 # and USB reordering. Run `bin/usb-rtsp-detect` to see what's available.
 #
-# `format` must be one of the formats the camera advertises (MJPG, YUYV, ...).
+# `format` must be one of the formats the camera advertises (MJPG, YUYV, H264).
 # `width`/`height`/`fps` must be a valid combination from the camera's capabilities.
+# `encode` is the codec sent to mediamtx — what RTSP clients actually receive:
+#   - h264   (default): libx264 ultrafast. Universal compat (VLC Android, browsers
+#                       via HLS/WebRTC if enabled, every CCTV app). Costs ~70% of
+#                       one A76 core at 1080p30 on Pi 5.
+#   - mjpeg            : RFC 2435 RTP/JPEG. ~10-15% CPU but fragile across players;
+#                       cheap UVC cams produce JPEG that mediamtx can't fragment
+#                       cleanly, leading to glitches on Android players.
+#   - copy             : passthrough, zero CPU. Only usable when format=H264 (a few
+#                       webcams do native H.264) or when the camera's MJPEG is
+#                       known RFC-2435-clean (rare).
 # `profile` selects buffering/transport from etc/profiles.yml.
 
 cameras:
@@ -15,4 +25,5 @@ cameras:
     width: 1920
     height: 1080
     fps: 30
+    encode: h264
     profile: balanced

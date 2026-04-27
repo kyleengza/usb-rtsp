@@ -38,7 +38,8 @@ PROFILES_YML = REPO_DIR / "etc" / "profiles.yml"
 MEDIAMTX_API = "http://127.0.0.1:9997"
 ALLOWED_UNITS = {"usb-rtsp", "usb-rtsp-admin"}
 CAM_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,15}$")
-ALLOWED_FORMATS = {"MJPG", "YUYV", "H264", "H264-encode"}
+ALLOWED_FORMATS = {"MJPG", "YUYV", "H264"}
+ALLOWED_ENCODES = {"h264", "mjpeg", "copy"}
 
 app = FastAPI(title="usb-rtsp admin")
 templates = Jinja2Templates(directory=str(REPO_DIR / "admin" / "templates"))
@@ -276,6 +277,7 @@ class CamSettings(BaseModel):
     width: int = Field(ge=16, le=7680)
     height: int = Field(ge=16, le=4320)
     fps: int = Field(ge=1, le=240)
+    encode: str = "h264"
     profile: str = "balanced"
 
 
@@ -284,6 +286,8 @@ def api_save_cam(name: str, body: CamSettings) -> JSONResponse:
     _validate_cam_name(name)
     if body.format not in ALLOWED_FORMATS:
         raise HTTPException(400, f"format must be one of {sorted(ALLOWED_FORMATS)}")
+    if body.encode not in ALLOWED_ENCODES:
+        raise HTTPException(400, f"encode must be one of {sorted(ALLOWED_ENCODES)}")
     profiles = load_profiles()
     if body.profile not in profiles:
         raise HTTPException(400, f"profile must be one of {list(profiles.keys())}")
@@ -293,7 +297,7 @@ def api_save_cam(name: str, body: CamSettings) -> JSONResponse:
     new_entry = {
         "name": name, "by_id": body.by_id, "format": body.format,
         "width": body.width, "height": body.height, "fps": body.fps,
-        "profile": body.profile,
+        "encode": body.encode, "profile": body.profile,
     }
     for i, c in enumerate(cams):
         if c["name"] == name:
@@ -362,6 +366,7 @@ def api_rescan() -> JSONResponse:
         d = c.get("default")
         if not d:
             continue
+        encode = "copy" if d["format"] == "H264" else "h264"
         doc.setdefault("cameras", []).append({
             "name": f"cam{next_idx}",
             "by_id": c["by_id"],
@@ -369,6 +374,7 @@ def api_rescan() -> JSONResponse:
             "width": d["width"],
             "height": d["height"],
             "fps": d["fps"],
+            "encode": encode,
             "profile": "balanced",
         })
         added.append(f"cam{next_idx}")

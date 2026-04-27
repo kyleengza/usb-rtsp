@@ -69,6 +69,15 @@
         </select>
       </label>
 
+      <label>Encode
+        <select name="encode">
+          {% set cur_encode = cam.encode if cam.encode is defined else 'h264' %}
+          <option value="h264"  {% if cur_encode == 'h264'  %}selected{% endif %}>H.264 (universal)</option>
+          <option value="mjpeg" {% if cur_encode == 'mjpeg' %}selected{% endif %}>MJPEG (lighter CPU)</option>
+          <option value="copy"  {% if cur_encode == 'copy'  %}selected{% endif %}>passthrough (no CPU)</option>
+        </select>
+      </label>
+
       <label>Profile
         <select name="profile">
           {% for p in profiles %}
