@@ -19,7 +19,7 @@ body {
 }
 header {
   border-bottom: 1px solid var(--border);
-  padding: 0.8rem 1.2rem;
+  padding: 0.8rem clamp(1rem, 2.5vw, 3rem);
   display: flex;
   align-items: center;
   gap: 1.5rem;
@@ -40,9 +40,10 @@ header h1 { margin: 0; font-size: 1.2rem; letter-spacing: 0.02em; }
 .badge.err { color: var(--err); border-color: var(--err); }
 #agg { color: var(--muted); font-variant-numeric: tabular-nums; }
 
-main { padding: 1rem 1.2rem; max-width: 1500px; margin: 0 auto; }
+main { padding: 1rem clamp(1rem, 2.5vw, 3rem); margin: 0 auto; max-width: 100%; }
 section { margin: 1.5rem 0; }
 
+/* Two-pane: cameras left, ops stack on right. */
 @media (min-width: 1000px) {
   main {
     display: grid;
@@ -56,6 +57,19 @@ section { margin: 1.5rem 0; }
   .host,
   .streams,
   .recovery { grid-column: 2; }
+}
+
+/* Very wide (3-column ultrawide / 1440p+): give streams its own column
+   so cameras + host stack vertically alongside it without dead space. */
+@media (min-width: 1700px) {
+  main {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 3fr) minmax(0, 3fr);
+  }
+  .cameras    { grid-column: 1; grid-row: 1 / span 6; }
+  .host       { grid-column: 2; grid-row: 1; }
+  .recovery   { grid-column: 2; grid-row: 2; }
+  .new-cams   { grid-column: 2; grid-row: 3; }
+  .streams    { grid-column: 3; grid-row: 1 / span 3; }
 }
 section > h2 {
   font-size: 1.05rem;
