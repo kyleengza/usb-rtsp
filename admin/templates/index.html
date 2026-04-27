@@ -31,11 +31,30 @@
     <header>
       <h3>{{ cam.name }}</h3>
       <span class="ready-dot" data-ready></span>
+      <button type="button" class="preview-toggle" data-act="preview">Live preview ▾</button>
     </header>
+    <div class="preview" hidden>
+      <iframe data-preview-frame loading="lazy" allow="autoplay" allowfullscreen></iframe>
+    </div>
     <ul class="urls">
-      <li><span class="url-label">RTSP</span> <code>rtsp://{{ host }}:8554/{{ cam.name }}</code> <span class="url-note">ffplay, mpv, most apps</span></li>
-      <li><span class="url-label">HLS</span> <code>http://{{ host }}:8888/{{ cam.name }}/index.m3u8</code> <span class="url-note">VLC, every browser, ~3 s lag</span></li>
-      <li><span class="url-label">WebRTC</span> <code><a href="http://{{ host }}:8889/{{ cam.name }}/" target="_blank">http://{{ host }}:8889/{{ cam.name }}/</a></code> <span class="url-note">browser-native, &lt;1 s lag</span></li>
+      <li>
+        <span class="url-label url-best">WebRTC</span>
+        <code><a href="http://{{ host }}:8889/{{ cam.name }}/" target="_blank" rel="noopener">http://{{ host }}:8889/{{ cam.name }}/</a></code>
+        <button type="button" class="copy" data-copy="http://{{ host }}:8889/{{ cam.name }}/">copy</button>
+        <span class="url-note">browser-native, &lt;1 s lag — recommended</span>
+      </li>
+      <li>
+        <span class="url-label">HLS</span>
+        <code>http://{{ host }}:8888/{{ cam.name }}/index.m3u8</code>
+        <button type="button" class="copy" data-copy="http://{{ host }}:8888/{{ cam.name }}/index.m3u8">copy</button>
+        <span class="url-note">VLC + every browser, ~3 s lag</span>
+      </li>
+      <li>
+        <span class="url-label">RTSP</span>
+        <code>rtsp://{{ host }}:8554/{{ cam.name }}</code>
+        <button type="button" class="copy" data-copy="rtsp://{{ host }}:8554/{{ cam.name }}">copy</button>
+        <span class="url-note">ffplay, mpv, most Android RTSP apps (not VLC)</span>
+      </li>
     </ul>
     <div class="meta">
       <div><strong>{{ c.card_name }}</strong></div>

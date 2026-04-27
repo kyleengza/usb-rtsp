@@ -203,6 +203,43 @@ function wireUpCard(card) {
     }
   });
 
+  // live preview toggle (lazy-loads WebRTC iframe so it doesn't auto-play
+  // every camera's stream the moment the page opens)
+  $("[data-act=preview]", card)?.addEventListener("click", () => {
+    const btn = $("[data-act=preview]", card);
+    const wrap = $(".preview", card);
+    const iframe = $("[data-preview-frame]", card);
+    const isOpen = !wrap.hidden;
+    if (isOpen) {
+      wrap.hidden = true;
+      iframe.removeAttribute("src");
+      btn.classList.remove("open");
+      btn.textContent = "Live preview ▾";
+    } else {
+      const cam = card.dataset.cam;
+      iframe.src = `http://${location.hostname}:8889/${cam}/`;
+      wrap.hidden = false;
+      btn.classList.add("open");
+      btn.textContent = "Hide preview ▴";
+    }
+  });
+
+  // copy URL buttons
+  $$(".copy", card).forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const url = btn.dataset.copy;
+      try {
+        await navigator.clipboard.writeText(url);
+        const orig = btn.textContent;
+        btn.classList.add("ok");
+        btn.textContent = "copied";
+        setTimeout(() => { btn.textContent = orig; btn.classList.remove("ok"); }, 1200);
+      } catch {
+        btn.textContent = "ctrl-c it";
+      }
+    });
+  });
+
   // kick button
   $("[data-act=kick]", card)?.addEventListener("click", async () => {
     const name = card.dataset.cam;
