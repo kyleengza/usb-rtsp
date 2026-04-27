@@ -9,3 +9,6 @@ __pycache__/
 # secrets — should never live in the repo even by accident
 .cookie-secret
 .stream-pass
+
+# Hailo runtime log written by hailortcli / hailort.service
+hailort.log
