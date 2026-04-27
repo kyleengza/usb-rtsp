@@ -19,7 +19,8 @@ from pathlib import Path
 
 import yaml
 
-CONFIG_DIR = Path(os.environ.get("USB_RTSP_CONFIG_DIR", Path.home() / ".config" / "usb-rtsp"))
+from .helpers import CONFIG_DIR
+
 AUTH_YML = CONFIG_DIR / "auth.yml"
 COOKIE_SECRET_FILE = CONFIG_DIR / ".cookie-secret"
 STREAM_PASS_FILE = CONFIG_DIR / ".stream-pass"

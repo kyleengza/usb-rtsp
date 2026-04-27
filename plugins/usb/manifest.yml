@@ -1,0 +1,4 @@
+name: usb
+description: USB cameras (UVC / v4l2)
+version: 0.1.0
+default_enabled: true

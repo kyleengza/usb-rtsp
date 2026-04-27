@@ -1,0 +1,201 @@
+<section class="cameras" data-plugin="usb">
+  <h2>Cameras</h2>
+  {% if not cards %}
+    <p class="empty">No cameras configured. {% if new_cams %}Click <strong>Rescan cameras</strong> in Service recovery to add the {{ new_cams|length }} detected device(s).{% else %}Plug in a USB camera and click <strong>Rescan cameras</strong>.{% endif %}</p>
+  {% endif %}
+
+  {% for c in cards %}
+  {% set cam = c.config %}
+  <article class="card{% if not c.is_present %} missing{% endif %}" data-cam="{{ cam.name }}" data-plugin="usb">
+    <header>
+      <h3>{{ cam.name }}</h3>
+      <span class="ready-dot" data-ready></span>
+      <div class="card-tabs">
+        <button type="button" class="card-tab" data-act="preview">Live preview ▾</button>
+        <button type="button" class="card-tab" data-act="settings">Settings ▾</button>
+      </div>
+    </header>
+    <div class="preview" hidden>
+      <div class="preview-controls">
+        <button type="button" class="copy" data-act="preview-reconnect">Reconnect</button>
+      </div>
+      <iframe data-preview-frame loading="lazy" allow="autoplay" allowfullscreen></iframe>
+    </div>
+    {% set creds_at = (stream_user ~ ':' ~ stream_pass ~ '@') if stream_auth else '' %}
+    <ul class="urls">
+      <li>
+        <span class="url-label url-best">WebRTC</span>
+        <code><a href="http://{{ creds_at }}{{ host }}:8889/{{ cam.name }}/" target="_blank" rel="noopener">http://{{ creds_at }}{{ host }}:8889/{{ cam.name }}/</a></code>
+        <button type="button" class="copy" data-copy="http://{{ creds_at }}{{ host }}:8889/{{ cam.name }}/">copy</button>
+        <span class="url-note">browser-native, &lt;1 s lag — recommended</span>
+      </li>
+      <li>
+        <span class="url-label">HLS</span>
+        <code>http://{{ creds_at }}{{ host }}:8888/{{ cam.name }}/index.m3u8</code>
+        <button type="button" class="copy" data-copy="http://{{ creds_at }}{{ host }}:8888/{{ cam.name }}/index.m3u8">copy</button>
+        <span class="url-note">VLC + every browser, ~3 s lag</span>
+      </li>
+      <li>
+        <span class="url-label">RTSP</span>
+        <code>rtsp://{{ creds_at }}{{ host }}:8554/{{ cam.name }}</code>
+        <button type="button" class="copy" data-copy="rtsp://{{ creds_at }}{{ host }}:8554/{{ cam.name }}">copy</button>
+        <span class="url-note">ffplay, mpv, most Android RTSP apps (not VLC)</span>
+      </li>
+    </ul>
+    <div class="meta">
+      <div><strong>{{ c.card_name }}</strong></div>
+      <div class="device">{{ cam.by_id }}</div>
+    </div>
+    <div class="live">
+      <span data-readers>0 viewers</span>
+      · <span data-bytes>—</span> received
+      · <span data-uptime>—</span>
+    </div>
+
+    <div class="settings-wrap" hidden>
+    <form class="settings" data-cam-form="{{ cam.name }}">
+      <input type="hidden" name="by_id" value="{{ cam.by_id }}">
+
+      <label>Format
+        <select name="format">
+          {% for f in c.available %}
+            <option value="{{ f.format }}" {% if f.format == cam.format %}selected{% endif %}>{{ f.format }}</option>
+          {% endfor %}
+          {% if not c.available %}
+            <option value="{{ cam.format }}" selected>{{ cam.format }}</option>
+          {% endif %}
+        </select>
+      </label>
+
+      <label>Resolution
+        <select name="resolution" data-current="{{ cam.width }}x{{ cam.height }}">
+          {% for s in c.current_sizes %}
+            {% set v = s.width ~ 'x' ~ s.height %}
+            <option value="{{ v }}" {% if s.width == cam.width and s.height == cam.height %}selected{% endif %}>{{ s.width }}×{{ s.height }}</option>
+          {% endfor %}
+          {% if not c.current_sizes %}
+            <option value="{{ cam.width }}x{{ cam.height }}" selected>{{ cam.width }}×{{ cam.height }}</option>
+          {% endif %}
+        </select>
+      </label>
+
+      <label>FPS
+        <select name="fps" data-current="{{ cam.fps }}">
+          {% for f in c.current_fps_options %}
+            <option value="{{ f }}" {% if f == cam.fps %}selected{% endif %}>{{ f }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>Encode
+        <select name="encode">
+          {% set cur_encode = cam.encode if cam.encode is defined else 'h264' %}
+          <option value="h264"  {% if cur_encode == 'h264'  %}selected{% endif %}>H.264 (universal)</option>
+          <option value="mjpeg" {% if cur_encode == 'mjpeg' %}selected{% endif %}>MJPEG (lighter CPU)</option>
+          <option value="copy"  {% if cur_encode == 'copy'  %}selected{% endif %}>passthrough (no CPU)</option>
+        </select>
+      </label>
+
+      <label>Profile
+        <select name="profile">
+          {% for p in profiles %}
+            <option value="{{ p }}" {% if p == cam.profile %}selected{% endif %}>{{ p.replace('_', ' ') }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>Quality
+        <select name="quality">
+          {% set cur_q = cam.quality if cam.quality is defined else 'medium' %}
+          {% for q in qualities %}
+            <option value="{{ q }}" {% if q == cur_q %}selected{% endif %}>{{ q.replace('_', ' ') }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <details class="advanced">
+        <summary>Advanced overrides ▾</summary>
+        <div class="advanced-grid">
+          <label class="adv">Bitrate (kbps)
+            <input type="number" name="bitrate_kbps" min="100" max="20000" step="50"
+                   value="{{ cam.bitrate_kbps if cam.bitrate_kbps is defined else '' }}"
+                   placeholder="auto from preset">
+          </label>
+          <label class="adv">x264 preset
+            <select name="x264_preset">
+              <option value="">(use quality preset)</option>
+              {% for p in x264_presets %}
+                <option value="{{ p }}" {% if cam.x264_preset is defined and cam.x264_preset == p %}selected{% endif %}>{{ p }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="adv">GOP (seconds)
+            <input type="number" name="gop_seconds" min="1" max="10" step="1"
+                   value="{{ cam.gop_seconds if cam.gop_seconds is defined else '' }}"
+                   placeholder="auto">
+          </label>
+          <label class="adv">B-frames
+            <select name="bframes">
+              <option value="">(use quality preset)</option>
+              {% for n in [0, 1, 2, 3] %}
+                <option value="{{ n }}" {% if cam.bframes is defined and cam.bframes == n %}selected{% endif %}>{{ n }}</option>
+              {% endfor %}
+            </select>
+            <small><strong>warning:</strong> any value &gt; 0 breaks WebRTC viewers (only baseline allowed). RTSP / HLS unaffected.</small>
+          </label>
+          <label class="adv adv-mjpeg">MJPEG q:v
+            <input type="number" name="mjpeg_qv" min="1" max="31" step="1"
+                   value="{{ cam.mjpeg_qv if cam.mjpeg_qv is defined else '' }}"
+                   placeholder="auto">
+            <small>1 = best, 31 = worst (only used when encode=mjpeg)</small>
+          </label>
+        </div>
+      </details>
+
+      <div class="actions">
+        <button type="submit">Save &amp; reload</button>
+        <button type="button" data-act="snap">Snapshot</button>
+        <button type="button" data-act="kick">Kick readers</button>
+      </div>
+      <div class="form-status" data-form-status></div>
+    </form>
+    </div>
+
+    <img class="snap-preview" hidden alt="">
+
+    {% if c.available %}
+    <details class="native-modes">
+      <summary>Native modes from camera ({{ c.available | sum(attribute='sizes', start=[]) | length }} total)</summary>
+      <div class="modes-grid">
+        {% for f in c.available %}
+        <div class="mode-block">
+          <strong>{{ f.format }}</strong>
+          <ul>
+            {% for s in f.sizes %}
+              <li>{{ s.width }}×{{ s.height }} @ {{ s.fps | join(', ') }} fps</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+
+    <script type="application/json" class="caps">{{ c.available | tojson }}</script>
+  </article>
+  {% endfor %}
+</section>
+
+{% if new_cams %}
+<section class="new-cams" data-plugin="usb">
+  <h2>Detected (not yet configured)</h2>
+  <ul>
+    {% for c in new_cams %}
+      <li><strong>{{ c.card }}</strong> — <code>{{ c.by_id }}</code> — default {{ c.default.format }} {{ c.default.width }}×{{ c.default.height }}@{{ c.default.fps }}fps</li>
+    {% endfor %}
+  </ul>
+  <p>Click <strong>Rescan cameras</strong> in Service recovery to add them.</p>
+</section>
+{% endif %}
+
+<script src="/static/usb/usb.js"></script>
