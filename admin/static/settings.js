@@ -109,6 +109,28 @@
     if ($("#auto-rotate-toggle").checked) saveAutoRotate();
   });
 
+  // Poll until at least one mediamtx path is back ready (or timeout).
+  // Used after rotate so we don't reload the page while mediamtx is
+  // still bringing the runOnInit ffmpeg up — otherwise the freshly-
+  // rendered iframe srcs hit a half-ready server and the WebRTC
+  // negotiation silently fails.
+  async function waitForAnyPathReady(timeoutMs = 20000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      try {
+        const r = await fetch("/api/paths");
+        if (r.ok) {
+          const d = await r.json();
+          if ((d.items || []).some(p => p.ready === true || p.sourceReady === true)) {
+            return true;
+          }
+        }
+      } catch {}
+      await new Promise(res => setTimeout(res, 500));
+    }
+    return false;
+  }
+
   $("[data-act=rotate-pass]")?.addEventListener("click", async (e) => {
     const status = $("#auth-status");
     status.className = "form-status";
@@ -123,8 +145,15 @@
       const j = await r.json();
       if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
       status.classList.add("ok");
-      status.textContent = `rotated · admin restarting · reloading in 6 s`;
-      setTimeout(() => location.reload(), 6000);
+      status.textContent = "rotated · waiting for mediamtx + ffmpeg to restart…";
+      const ready = await waitForAnyPathReady(20000);
+      // mediamtx reports path ready as soon as the publisher reconnects,
+      // but its WebRTC stack needs another beat to accept WHEP offers.
+      await new Promise(res => setTimeout(res, 800));
+      status.textContent = ready
+        ? "rotated · stream ready · reloading"
+        : "rotated · stream slow to come back — reloading anyway";
+      setTimeout(() => location.reload(), 600);
     } catch (err) {
       status.classList.add("err");
       status.textContent = `rotate failed: ${err.message}`;
