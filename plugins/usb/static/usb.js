@@ -82,19 +82,13 @@
     fresh.setAttribute("loading", "lazy");
     fresh.setAttribute("allow", "autoplay");
     fresh.setAttribute("allowfullscreen", "");
-    const creds = await freshStreamCreds() || window.__USB_RTSP_STREAM_CREDS__;
-    // Use ?user=&pass= query auth, NOT user:pass@host. Modern browsers strip
-    // url-embedded credentials from iframe src for cross-origin security
-    // (panel = :8080, mediamtx WebRTC = :8889 — different ports, different
-    // origins). Query-string auth survives the strip and mediamtx accepts it
-    // on every protocol endpoint, including the WHEP negotiation that
-    // mediamtx's bundled HTML player issues from inside the iframe.
-    const credQS = creds
-      ? `&user=${encodeURIComponent(creds.user)}&pass=${encodeURIComponent(creds.pass)}`
-      : "";
-    fresh.src = `http://${location.hostname}:8889/${camName}/?t=${Date.now()}${credQS}`;
+    // Iframe loads from the panel's own /preview/<cam>/ proxy. Same-origin
+    // (panel cookie covers it), and the panel adds the HTTP Basic header
+    // mediamtx needs for non-loopback requests. The bundled WebRTC player's
+    // relative WHEP URL ('whep' resolved against window.location.href) ends
+    // up at /preview/<cam>/whep so it flows through the same proxy.
+    fresh.src = `/preview/${encodeURIComponent(camName)}/?t=${Date.now()}`;
     if (old) old.replaceWith(fresh); else wrap.appendChild(fresh);
-    if (creds) window.__USB_RTSP_STREAM_CREDS__ = creds;
     return fresh;
   }
 

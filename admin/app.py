@@ -35,6 +35,7 @@ from core.helpers import (
     duration_h,
     fmt_bytes,
     fmt_duration,
+    is_valid_name,
     journal,
     service_meta,
     systemctl,
@@ -71,6 +72,9 @@ app.mount("/static-core", StaticFiles(directory=str(REPO_DIR / "admin" / "static
 # ─── auth middleware ────────────────────────────────────────────────────────
 
 PUBLIC_PATHS = {"/login", "/logout", "/healthz", "/api/auth/state"}
+# /preview/* requires panel auth (the cookie check below); we add it to a
+# separate list because the proxy is reached via the iframe's own load
+# (same-origin to the panel), so it benefits from the same auth gate.
 PUBLIC_PREFIXES = ("/static/", "/static-core/")
 
 
@@ -572,6 +576,94 @@ def api_snapshots_cleanup(older_than_days: int = 7) -> JSONResponse:
 def healthz() -> JSONResponse:
     api = api_get("/v3/paths/list")
     return JSONResponse({"ok": api is not None})
+
+
+# ─── /preview/<cam>/* — same-origin proxy to mediamtx WebRTC ────────────────
+# mediamtx requires HTTP Basic on its :8889 endpoints from non-loopback IPs.
+# Browsers strip url-embedded creds from iframe src (cross-origin) and won't
+# let JS set Authorization headers on iframe loads. Solution: iframe loads
+# /preview/cam0/ from the panel (same-origin, panel cookie auth), the panel
+# forwards to mediamtx with Basic. Same flow handles the WHEP POST/PATCH/
+# DELETE the player JS issues — relative URLs resolve back to /preview/cam0/whep.
+
+import base64
+import urllib.parse
+
+
+def _mediamtx_basic_auth_header() -> str | None:
+    creds = auth_lib.stream_credentials()
+    if not creds:
+        return None
+    user, pw = creds
+    return "Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode()
+
+
+_PROXY_HOP_HEADERS = {
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "te", "trailers", "transfer-encoding", "upgrade",
+    "host", "content-length",
+}
+
+
+@app.api_route(
+    "/preview/{cam}/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+)
+@app.api_route("/preview/{cam}", methods=["GET"])
+@app.api_route("/preview/{cam}/", methods=["GET"])
+async def preview_proxy(request: Request, cam: str, path: str = ""):
+    if not is_valid_name(cam):
+        raise HTTPException(400, f"invalid cam name: {cam!r}")
+
+    body = await request.body() if request.method in ("POST", "PUT", "PATCH") else None
+    target = f"http://127.0.0.1:8889/{cam}"
+    if path:
+        target += "/" + path
+    elif not request.url.path.endswith("/preview/" + cam):
+        # /preview/cam → ensure trailing slash for mediamtx so the player loads
+        pass
+    # mediamtx serves the player at /cam/ (with trailing slash) — preserve it
+    if request.url.path.endswith("/") and not target.endswith("/"):
+        target += "/"
+    if request.url.query:
+        target += "?" + request.url.query
+
+    fwd_headers: dict[str, str] = {}
+    for k, v in request.headers.items():
+        if k.lower() in _PROXY_HOP_HEADERS:
+            continue
+        fwd_headers[k] = v
+    auth_header = _mediamtx_basic_auth_header()
+    if auth_header:
+        fwd_headers["Authorization"] = auth_header
+
+    req = urllib.request.Request(target, method=request.method, data=body, headers=fwd_headers)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            resp_body = r.read()
+            resp_status = r.status
+            resp_headers = {}
+            for h in ("content-type", "location", "etag", "cache-control"):
+                if h in r.headers:
+                    resp_headers[h] = r.headers[h]
+    except urllib.error.HTTPError as e:
+        resp_body = e.read() if e.fp else b""
+        resp_status = e.code
+        resp_headers = {}
+        ct = e.headers.get("content-type") if e.headers else None
+        if ct:
+            resp_headers["content-type"] = ct
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        return JSONResponse({"detail": f"upstream error: {e}"}, status_code=502)
+
+    # mediamtx may return a Location header pointing at the upstream WHEP
+    # session URL, e.g. '/cam0/whep/<id>'. Rewrite to our proxy path so the
+    # player's PATCH/DELETE for ICE updates also flows through us.
+    loc = resp_headers.get("location")
+    if loc and loc.startswith("/" + cam + "/"):
+        resp_headers["location"] = "/preview" + loc
+
+    return Response(content=resp_body, status_code=resp_status, headers=resp_headers)
 
 
 # ─── auth routes ────────────────────────────────────────────────────────────
