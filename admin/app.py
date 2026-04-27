@@ -59,12 +59,17 @@ def _make_templates() -> Jinja2Templates:
 
 app = FastAPI(title="usb-rtsp admin")
 templates = _make_templates()
-app.mount("/static", StaticFiles(directory=str(REPO_DIR / "admin" / "static")), name="static")
+# /static-core/* serves admin/static/. Each plugin's register() mounts its
+# own /static/<name>/ — keeping these on different prefixes avoids the
+# Starlette Mount-prefix-matching trap where the more-general /static
+# would catch /static/<plugin>/<file> requests and 404 inside admin/static.
+app.mount("/static-core", StaticFiles(directory=str(REPO_DIR / "admin" / "static")), name="static-core")
 
 
 # ─── auth middleware ────────────────────────────────────────────────────────
 
 PUBLIC_PATHS = {"/login", "/logout", "/healthz", "/api/auth/state"}
+PUBLIC_PREFIXES = ("/static/", "/static-core/")
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -74,7 +79,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         path = request.url.path
-        if path in PUBLIC_PATHS or path.startswith("/static/"):
+        if path in PUBLIC_PATHS or any(path.startswith(p) for p in PUBLIC_PREFIXES):
             request.state.user = None
             return await call_next(request)
 
