@@ -40,8 +40,23 @@ header h1 { margin: 0; font-size: 1.2rem; letter-spacing: 0.02em; }
 .badge.err { color: var(--err); border-color: var(--err); }
 #agg { color: var(--muted); font-variant-numeric: tabular-nums; }
 
-main { padding: 1rem 1.2rem; max-width: 1100px; margin: 0 auto; }
+main { padding: 1rem 1.2rem; max-width: 1500px; margin: 0 auto; }
 section { margin: 1.5rem 0; }
+
+@media (min-width: 1000px) {
+  main {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: 1.2rem;
+    align-items: start;
+  }
+  main > section { margin: 0; }
+  .cameras { grid-column: 1; grid-row: 1 / span 6; }
+  .new-cams,
+  .host,
+  .streams,
+  .recovery { grid-column: 2; }
+}
 section > h2 {
   font-size: 1.05rem;
   margin: 0 0 0.7rem 0;
