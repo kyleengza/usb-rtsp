@@ -30,13 +30,18 @@
 <main>
 
 {# Plugin sections — each enabled plugin's templates/section.html.
-   The plugin's section_context() can add its own template variables. #}
+   The plugin's section_context() can add its own template variables.
+   Wrapped in .plugin-stack so the desktop two-pane layout can pin all
+   plugin sections to the left column regardless of count or order. #}
+<div class="plugin-stack">
 {% for p in plugins %}
   {% if p.section_template %}
     {% include p.section_template %}
   {% endif %}
 {% endfor %}
+</div>
 
+<div class="host-stack">
 <section class="host">
   <h2>Host</h2>
   <div class="host-grid">
@@ -56,6 +61,11 @@
       <div class="host-sub" data-host-mediamtx>mediamtx —</div>
     </div>
     <div class="host-tile">
+      <div class="host-label">Network</div>
+      <div class="host-value mono" data-host-net>—</div>
+      <div class="host-sub" data-host-net-iface>—</div>
+    </div>
+    <div class="host-tile">
       <div class="host-label">CPU load</div>
       <div class="host-value mono" data-host-load>—</div>
       <div class="host-sub" data-host-cpu>— cores</div>
@@ -71,14 +81,64 @@
       <div class="host-bar"><div class="host-bar-fill" data-host-disk-root-bar></div></div>
     </div>
     <div class="host-tile">
-      <div class="host-label">Disk ~/.config</div>
-      <div class="host-value mono" data-host-disk-config>—</div>
-      <div class="host-bar"><div class="host-bar-fill" data-host-disk-config-bar></div></div>
-    </div>
-    <div class="host-tile">
       <div class="host-label">CPU temp</div>
       <div class="host-value mono" data-host-temp>—</div>
-      <div class="host-sub">thermal zone 0</div>
+      <div class="host-sub" data-host-fan>thermal zone 0</div>
+    </div>
+    <div class="host-tile" data-host-tile="throttle">
+      <div class="host-label">Power health</div>
+      <div class="host-value" data-host-throttle>—</div>
+      <div class="host-sub" data-host-throttle-raw>vcgencmd get_throttled</div>
+    </div>
+  </div>
+</section>
+
+{# Hardware-presence cards: hidden by default; the /api/host poll
+   un-hides them when the corresponding hardware is detected. #}
+<section class="hailo" data-hardware-card="hailo" hidden>
+  <h2 data-hailo-title>Hailo AI HAT</h2>
+  <div class="host-grid">
+    <div class="host-tile">
+      <div class="host-label">Model</div>
+      <div class="host-value" data-hailo-model>—</div>
+      <div class="host-sub" data-hailo-arch>—</div>
+    </div>
+    <div class="host-tile">
+      <div class="host-label">Firmware</div>
+      <div class="host-value mono" data-hailo-fw>—</div>
+      <div class="host-sub" data-hailo-dev>—</div>
+    </div>
+    <div class="host-tile">
+      <div class="host-label">Driver</div>
+      <div class="host-value mono" data-hailo-driver>—</div>
+      <div class="host-sub" data-hailo-svc>—</div>
+    </div>
+    <div class="host-tile">
+      <div class="host-label">PCIe link</div>
+      <div class="host-value mono" data-hailo-pcie>—</div>
+      <div class="host-sub">to RP1 bridge</div>
+    </div>
+  </div>
+</section>
+
+<section class="ups" data-hardware-card="ups" hidden>
+  <h2 data-ups-title>UPS HAT</h2>
+  <div class="host-grid">
+    <div class="host-tile">
+      <div class="host-label">Battery</div>
+      <div class="host-value mono" data-ups-volt>—</div>
+      <div class="host-bar"><div class="host-bar-fill" data-ups-bar></div></div>
+      <div class="host-sub" data-ups-sub>1S Li-ion</div>
+    </div>
+    <div class="host-tile">
+      <div class="host-label">Source</div>
+      <div class="host-value" data-ups-source>—</div>
+      <div class="host-sub" data-ups-low>—</div>
+    </div>
+    <div class="host-tile">
+      <div class="host-label">Watchdog</div>
+      <div class="host-value mono" data-ups-watchdog>—</div>
+      <div class="host-sub">ups-watchdog.service</div>
     </div>
   </div>
 </section>
@@ -94,6 +154,7 @@
     </tbody>
   </table>
 </section>
+</div>
 
 </main>
 

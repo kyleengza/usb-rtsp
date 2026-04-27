@@ -110,7 +110,8 @@ header h1 { margin: 0; font-size: 1.2rem; letter-spacing: 0.02em; }
 main { padding: 1rem clamp(1rem, 2.5vw, 3rem); margin: 0 auto; max-width: 100%; }
 section { margin: 1.5rem 0; }
 
-/* Two-pane: cameras left, host + streams stacked on the right. */
+/* Two-pane: every plugin section (cameras, relays, …) stacks on the
+   left; host + streams stack on the right. */
 @media (min-width: 1000px) {
   main {
     display: grid;
@@ -119,10 +120,17 @@ section { margin: 1.5rem 0; }
     align-items: start;
   }
   main > section { margin: 0; }
-  .cameras { grid-column: 1; grid-row: 1 / span 6; }
-  .new-cams,
-  .host,
-  .streams { grid-column: 2; }
+  .plugin-stack,
+  .host-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  .plugin-stack { grid-column: 1; }
+  .host-stack   { grid-column: 2; }
+  .plugin-stack > section,
+  .host-stack > section { margin: 0; }
+  .new-cams { grid-column: 2; }
   /* Settings page does not split — single column always. */
   .settings-main { display: block !important; }
 }
@@ -189,7 +197,10 @@ section > h2 {
 
 .meta { color: var(--muted); margin: 0.4rem 0 0.2rem; }
 .meta .device { font-family: ui-monospace, "SF Mono", monospace; font-size: 0.8rem; }
-.live { margin: 0.3rem 0 0.7rem; font-variant-numeric: tabular-nums; }
+.live { margin: 0.3rem 0 0.7rem; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.live .err-text { color: var(--err); }
+.live .hint-text { color: var(--muted); }
+.live [data-probe-result] { grid-column: auto; min-height: 0; }
 
 .settings {
   display: grid;
@@ -230,6 +241,7 @@ button.danger:hover { background: var(--err); color: white; }
 .form-status { grid-column: 1 / -1; min-height: 1em; font-size: 0.85rem; color: var(--muted); }
 .form-status.ok { color: var(--ok); }
 .form-status.err { color: var(--err); }
+.form-status.warn { color: #d29922; }
 
 .snap-preview {
   display: block;
@@ -267,6 +279,10 @@ button.danger:hover { background: var(--err); color: white; }
 .host-bar-fill { height: 100%; background: var(--accent); transition: width 0.3s ease; width: 0; }
 .host-bar-fill.warn { background: var(--warn); }
 .host-bar-fill.err { background: var(--err); }
+.host-tile.warn { border-color: var(--warn); }
+.host-tile.warn .host-value { color: var(--warn); }
+.host-tile.err { border-color: var(--err); }
+.host-tile.err .host-value { color: var(--err); }
 
 .streams table {
   width: 100%;

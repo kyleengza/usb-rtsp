@@ -250,7 +250,9 @@ async function refreshHost() {
   set("[data-host-uptime]", `up ${h.uptime_h || "—"}`);
   set("[data-host-ip]", h.lan_ip || "—");
   set("[data-host-mediamtx]", h.mediamtx_version || "—");
-  set("[data-host-cpu]", `${h.cpu_count || 0} cores`);
+  set("[data-host-cpu]", h.cpu_pct != null
+    ? `${h.cpu_pct}% busy · ${h.cpu_count || 0} cores`
+    : `${h.cpu_count || 0} cores`);
   if (h.loadavg) {
     set("[data-host-load]", `${h.loadavg[0].toFixed(2)} / ${h.loadavg[1].toFixed(2)} / ${h.loadavg[2].toFixed(2)}`);
   }
@@ -262,11 +264,122 @@ async function refreshHost() {
     set("[data-host-disk-root]", `${h.disk_root.used_h} / ${h.disk_root.total_h} (${h.disk_root.used_pct}%)`);
     setBar("[data-host-disk-root-bar]", h.disk_root.used_pct || 0);
   }
-  if (h.disk_config) {
-    set("[data-host-disk-config]", `${h.disk_config.used_h} / ${h.disk_config.total_h} (${h.disk_config.used_pct}%)`);
-    setBar("[data-host-disk-config-bar]", h.disk_config.used_pct || 0);
-  }
   set("[data-host-temp]", h.cpu_temp_c != null ? `${h.cpu_temp_c} °C` : "—");
+  set("[data-host-fan]", h.fan
+    ? `fan ${h.fan.rpm} rpm · ${h.fan.pwm_pct}% pwm`
+    : "thermal zone 0");
+
+  const fmtBps = (bps) => {
+    if (bps == null) return "—";
+    if (bps < 1024)         return `${bps} B/s`;
+    if (bps < 1024 * 1024)  return `${(bps / 1024).toFixed(1)} KB/s`;
+    return `${(bps / 1024 / 1024).toFixed(2)} MB/s`;
+  };
+  const fmtAgo = (s) => {
+    if (s == null) return "—";
+    if (s < 60)    return `${s}s`;
+    if (s < 3600)  return `${Math.floor(s / 60)}m${s % 60 ? ` ${s % 60}s` : ""}`;
+    return `${Math.floor(s / 3600)}h${Math.floor((s % 3600) / 60)}m`;
+  };
+  if (h.lan) {
+    set("[data-host-net]", `↓ ${fmtBps(h.lan.rx_bps)} · ↑ ${fmtBps(h.lan.tx_bps)}`);
+    set("[data-host-net-iface]", h.lan.iface || "—");
+  } else {
+    set("[data-host-net]", "—");
+    set("[data-host-net-iface]", "no default route");
+  }
+
+  const showCard = (name, on) => {
+    const el = document.querySelector(`[data-hardware-card="${name}"]`);
+    if (el) el.hidden = !on;
+  };
+
+  if (h.throttle) {
+    const t = h.throttle;
+    const tile = document.querySelector('[data-host-tile="throttle"]');
+    let value = "OK";
+    let sub   = t.raw || "—";
+    if (t.now) {
+      value = `⚠ ${t.text}`;
+      sub   = "happening now";
+    } else if (t.latched && t.fresh) {
+      value = `latched: ${t.text}`;
+      sub   = `last event ${fmtAgo(t.age_s)} ago`;
+    } else if (t.latched) {
+      // Bits are still set in the register (only a power-cycle clears
+      // them) but no events for a while — treat as old news.
+      value = "OK";
+      sub   = `latched ${t.raw} · last event ${fmtAgo(t.age_s)} ago`;
+    }
+    set("[data-host-throttle]", value);
+    set("[data-host-throttle-raw]", sub);
+    if (tile) {
+      tile.classList.toggle("warn", !!t.latched && !!t.fresh && !t.now);
+      tile.classList.toggle("err",  !!t.now);
+    }
+  }
+
+  if (h.hailo) {
+    showCard("hailo", true);
+    set("[data-hailo-model]",  h.hailo.model || "—");
+    set("[data-hailo-arch]",   h.hailo.arch || "—");
+    set("[data-hailo-fw]",     h.hailo.fw_version || "—");
+    set("[data-hailo-dev]",    h.hailo.dev ? "/dev/hailo0 present" : "/dev/hailo0 missing");
+    set("[data-hailo-driver]", h.hailo.driver || "—");
+    set("[data-hailo-svc]",
+      h.hailo.hailort_active === true  ? "hailort active"
+      : h.hailo.hailort_active === false ? "hailort inactive"
+      : "hailort —");
+    set("[data-hailo-pcie]",   h.hailo.pcie_link || "—");
+  } else {
+    showCard("hailo", false);
+  }
+
+  if (h.ups) {
+    showCard("ups", true);
+    set("[data-ups-title]", h.ups.model ? `UPS HAT — ${h.ups.model}` : "UPS HAT");
+    const v = h.ups.battery_v != null ? `${h.ups.battery_v.toFixed(2)} V` : "— V";
+    const p = h.ups.battery_pct != null ? `${h.ups.battery_pct}%` : "—";
+    set("[data-ups-volt]", `${v} (${p})`);
+    setBar("[data-ups-bar]", h.ups.battery_pct || 0);
+    const sourceLabels = {
+      ac:          "AC power",
+      battery:     "On battery",
+      battery_low: "On battery — low",
+      unreachable: "⚠ HAT i2c unreachable",
+      unknown:     "—",
+    };
+    set("[data-ups-source]", sourceLabels[h.ups.source] || "—");
+    // Degraded sub-line when we can't read voltage at all.
+    if (h.ups.source === "unreachable") {
+      set("[data-ups-low]", "no i2c — cell state unknown");
+    } else {
+      set("[data-ups-low]", h.ups.low_v != null ? `cutoff ${h.ups.low_v.toFixed(2)} V` : "");
+    }
+    set("[data-ups-watchdog]",
+      h.ups.watchdog_active === true  ? "active"
+      : h.ups.watchdog_active === false ? "inactive"
+      : "—");
+
+    // Tile colouring: red on unreachable / battery_low, yellow on
+    // battery, no colour on AC.
+    const upsCard = document.querySelector('[data-hardware-card="ups"]');
+    if (upsCard) {
+      upsCard.querySelectorAll('.host-tile').forEach(t => {
+        t.classList.remove("warn", "err");
+      });
+      const sourceTile = upsCard.querySelectorAll('.host-tile')[1];
+      if (sourceTile) {
+        if (h.ups.source === "unreachable" || h.ups.source === "battery_low") {
+          sourceTile.classList.add("err");
+        } else if (h.ups.source === "battery") {
+          sourceTile.classList.add("warn");
+        }
+      }
+    }
+  } else {
+    showCard("ups", false);
+  }
 }
 
 
