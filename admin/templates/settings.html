@@ -30,9 +30,20 @@
 
 <div class="plugins-intro">
   <h2>Plugins</h2>
-  <p class="hint">Toggle a plugin to enable or disable it.
-  Re-renders <code>mediamtx.yml</code> and restarts both services;
-  the page reloads itself a few seconds after.</p>
+  <p class="hint">Toggle to enable/disable. Bundled plugins ship with
+  usb-rtsp; user plugins live at <code>~/.local/share/usb-rtsp/plugins/</code>
+  and can be uninstalled. Re-renders <code>mediamtx.yml</code> and
+  restarts both services on change.</p>
+  <details class="add-plugin">
+    <summary>+ Add plugin ▾</summary>
+    <div class="add-plugin-form">
+      <label>git URL or local path
+        <input type="text" id="add-plugin-source" placeholder="https://github.com/owner/usb-rtsp-plugin-foo  OR  /home/potato/usb-rtsp-foo">
+      </label>
+      <button type="button" data-act="install-plugin">Install</button>
+      <button type="button" data-act="refresh-plugins">Refresh</button>
+    </div>
+  </details>
   <div class="form-status" id="plugins-status"></div>
 </div>
 
@@ -41,6 +52,9 @@
   <header>
     <h2>{{ p.name }}</h2>
     <span class="ver">v{{ p.version }}</span>
+    <span class="hint-chip {% if p.bundled %}bundled-chip{% else %}user-chip{% endif %}">
+      {{ 'bundled' if p.bundled else 'user' }}
+    </span>
     {% if p.default_enabled %}<span class="hint-chip">default-on</span>{% endif %}
     <span class="plugin-status badge {% if p.enabled %}ok{% endif %}" data-plugin-state>
       {{ 'enabled' if p.enabled else 'disabled' }}
@@ -56,10 +70,18 @@
     <dl class="plugin-kv">
       <dt>name</dt>     <dd><code>{{ p.name }}</code></dd>
       <dt>version</dt>  <dd><code>v{{ p.version }}</code></dd>
+      <dt>source</dt>   <dd>{{ 'bundled (ships with usb-rtsp)' if p.bundled else 'user-installed' }}</dd>
+      <dt>dir</dt>      <dd><code>{{ p.dir }}</code></dd>
       <dt>default</dt>  <dd>{{ 'enabled' if p.default_enabled else 'disabled' }}</dd>
       <dt>state</dt>    <dd>{{ 'enabled' if p.enabled else 'disabled' }} now</dd>
       <dt>config</dt>   <dd><code>~/.config/usb-rtsp/{{ p.name }}/</code></dd>
     </dl>
+    {% if not p.bundled %}
+    <div class="plugin-actions">
+      <button type="button" class="danger" data-act="uninstall-plugin" data-plugin-name="{{ p.name }}">Uninstall</button>
+      <span class="hint">removes the dir under <code>~/.local/share/usb-rtsp/plugins/</code>; symlinks just unlink.</span>
+    </div>
+    {% endif %}
 
     {% if p.inputs %}
     <h3 class="inputs-heading">Inputs</h3>

@@ -22,6 +22,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader, PrefixLoader, select_autoescape
+from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from core import auth as auth_lib
@@ -334,8 +335,78 @@ def api_plugins() -> JSONResponse:
             "version": p.version,
             "default_enabled": p.default_enabled,
             "enabled": p.name in enabled,
+            "bundled": p.bundled,
+            "dir": str(p.dir),
         })
     return JSONResponse({"items": items})
+
+
+class PluginInstall(BaseModel):
+    source: str = Field(min_length=1)
+
+
+@app.post("/api/plugins/install")
+async def api_plugin_install(body: PluginInstall) -> JSONResponse:
+    """Install a plugin from a git URL or a local path."""
+    spec = body.source.strip()
+    try:
+        if spec.startswith(("http://", "https://", "git@", "ssh://")):
+            p = plugin_loader.install_plugin_from_git(spec)
+        else:
+            p = plugin_loader.install_plugin_from_path(Path(spec))
+    except (FileExistsError, FileNotFoundError, ValueError) as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(500, str(e))
+
+    # Schedule admin restart out-of-band so the new plugin actually loads.
+    subprocess.Popen(
+        ["systemctl", "--user", "restart", "usb-rtsp-admin"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    return JSONResponse({
+        "installed": p.name if p else None,
+        "dir": str(p.dir) if p else None,
+        "admin_restart": True,
+    })
+
+
+@app.post("/api/plugins/uninstall/{name}")
+def api_plugin_uninstall(name: str) -> JSONResponse:
+    try:
+        plugin_loader.uninstall_plugin(name)
+    except PermissionError as e:
+        raise HTTPException(422, str(e))
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(404, str(e))
+
+    # Re-render mediamtx (in case the removed plugin contributed paths)
+    # and restart usb-rtsp + admin so the plugin is gone from runtime.
+    subprocess.run(
+        ["python3", "-m", "core.renderer"],
+        cwd=str(REPO_DIR), capture_output=True, text=True, timeout=15,
+    )
+    systemctl("restart", "usb-rtsp")
+    subprocess.Popen(
+        ["systemctl", "--user", "restart", "usb-rtsp-admin"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    return JSONResponse({"uninstalled": name, "admin_restart": True})
+
+
+@app.post("/api/plugins/refresh")
+def api_plugin_refresh() -> JSONResponse:
+    """Re-walk plugin paths + schedule admin restart so any newly-dropped
+    plugins or removed ones reflect in the running process."""
+    plugins = plugin_loader.refresh()
+    subprocess.Popen(
+        ["systemctl", "--user", "restart", "usb-rtsp-admin"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    return JSONResponse({
+        "discovered": [p.name for p in plugins],
+        "admin_restart": True,
+    })
 
 
 def _set_plugin_enabled(name: str, enable: bool) -> dict:
@@ -399,6 +470,8 @@ def settings_page(request: Request) -> HTMLResponse:
             "version": p.version,
             "default_enabled": p.default_enabled,
             "enabled": p.name in enabled,
+            "bundled": p.bundled,
+            "dir": str(p.dir),
             "inputs": [],
         }
         if p.name in enabled:

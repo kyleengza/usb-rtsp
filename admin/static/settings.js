@@ -33,6 +33,70 @@
     });
   });
 
+  // ─── plugin install / uninstall / refresh ─────────────────────────────
+  async function reloadAfterAdminRestart(statusEl, msg) {
+    statusEl.classList.add("ok");
+    statusEl.textContent = `${msg} · admin restarting · reloading in 5 s`;
+    setTimeout(() => location.reload(), 5000);
+  }
+
+  $('[data-act=install-plugin]')?.addEventListener("click", async () => {
+    const status = $("#plugins-status");
+    status.className = "form-status";
+    const source = ($("#add-plugin-source").value || "").trim();
+    if (!source) { status.classList.add("err"); status.textContent = "git URL or path required"; return; }
+    status.textContent = "installing…";
+    try {
+      const r = await fetch("/api/plugins/install", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+      reloadAfterAdminRestart(status, `installed ${j.installed} from ${j.dir}`);
+    } catch (err) {
+      status.classList.add("err");
+      status.textContent = `install failed: ${err.message}`;
+    }
+  });
+
+  $('[data-act=refresh-plugins]')?.addEventListener("click", async () => {
+    const status = $("#plugins-status");
+    status.className = "form-status";
+    status.textContent = "refreshing…";
+    try {
+      const r = await fetch("/api/plugins/refresh", { method: "POST" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+      reloadAfterAdminRestart(status, `discovered: ${j.discovered.join(", ")}`);
+    } catch (err) {
+      status.classList.add("err");
+      status.textContent = `refresh failed: ${err.message}`;
+    }
+  });
+
+  $$('[data-act=uninstall-plugin]').forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const name = btn.dataset.pluginName;
+      if (!confirm(`Uninstall plugin '${name}'? Removes its dir under ~/.local/share/usb-rtsp/plugins/.`)) return;
+      const status = $("#plugins-status");
+      status.className = "form-status";
+      status.textContent = `uninstalling ${name}…`;
+      btn.disabled = true;
+      try {
+        const r = await fetch(`/api/plugins/uninstall/${encodeURIComponent(name)}`, { method: "POST" });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+        reloadAfterAdminRestart(status, `uninstalled ${name}`);
+      } catch (err) {
+        status.classList.add("err");
+        status.textContent = `uninstall failed: ${err.message}`;
+        btn.disabled = false;
+      }
+    });
+  });
+
   // ─── plugin block fold/unfold ──────────────────────────────────────────
   $$('[data-act=fold-plugin]').forEach(btn => {
     btn.addEventListener("click", () => {
