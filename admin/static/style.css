@@ -66,10 +66,10 @@ section { margin: 1.5rem 0; }
     grid-template-columns: minmax(0, 5fr) minmax(0, 3fr) minmax(0, 3fr);
   }
   .cameras    { grid-column: 1; grid-row: 1 / span 6; }
-  .host       { grid-column: 2; grid-row: 1; }
-  .recovery   { grid-column: 2; grid-row: 2; }
-  .new-cams   { grid-column: 2; grid-row: 3; }
-  .streams    { grid-column: 3; grid-row: 1 / span 3; }
+  .streams    { grid-column: 2; grid-row: 1; }
+  .host       { grid-column: 2; grid-row: 2; }
+  .recovery   { grid-column: 3; grid-row: 1; }
+  .new-cams   { grid-column: 3; grid-row: 2; }
 }
 section > h2 {
   font-size: 1.05rem;
