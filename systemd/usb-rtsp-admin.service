@@ -9,7 +9,7 @@ Environment=USB_RTSP_CONFIG_DIR=%h/.config/usb-rtsp
 Environment=USB_RTSP_REPO=@@REPO_DIR@@
 Environment=PYTHONPATH=@@REPO_DIR@@
 WorkingDirectory=@@REPO_DIR@@
-ExecStart=/usr/bin/uvicorn admin.app:app --host 0.0.0.0 --port 8080 --log-level warning
+ExecStart=/usr/bin/python3 -m uvicorn admin.app:app --host 0.0.0.0 --port 8080 --log-level warning
 Restart=on-failure
 RestartSec=2
 

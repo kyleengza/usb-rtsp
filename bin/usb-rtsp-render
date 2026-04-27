@@ -30,6 +30,24 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_DIR = Path(os.environ.get("USB_RTSP_CONFIG_DIR", Path.home() / ".config" / "usb-rtsp"))
 
+# v4l2 FOURCC → ffmpeg `-input_format` string. ffmpeg's v4l2 demuxer doesn't accept
+# the raw FOURCC; it wants its own codec/pixfmt names. (E.g. MJPG → "mjpeg", not "mjpg".)
+V4L2_TO_FFMPEG_INPUT_FORMAT = {
+    "MJPG": "mjpeg",
+    "YUYV": "yuyv422",
+    "UYVY": "uyvy422",
+    "H264": "h264",
+    "HEVC": "hevc",
+    "NV12": "nv12",
+    "YV12": "yuv420p",
+    "RGB3": "rgb24",
+    "BGR3": "bgr24",
+}
+
+
+def ffmpeg_input_format(fourcc: str) -> str:
+    return V4L2_TO_FFMPEG_INPUT_FORMAT.get(fourcc.upper(), fourcc.lower())
+
 
 def ffmpeg_cmd(cam: dict, profile: dict) -> str:
     """Build the ffmpeg command for a camera's runOnInit."""
@@ -40,7 +58,7 @@ def ffmpeg_cmd(cam: dict, profile: dict) -> str:
 
     common_in = (
         f"-hide_banner -loglevel warning "
-        f"-f v4l2 -input_format {fmt.lower()} "
+        f"-f v4l2 -input_format {ffmpeg_input_format(fmt)} "
         f"-video_size {w}x{h} -framerate {fps} "
         f"-i {by_id_path}"
     )

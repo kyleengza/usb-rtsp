@@ -18,10 +18,11 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field
 
 # ─── paths & constants ──────────────────────────────────────────────────────
 
@@ -269,30 +270,30 @@ def _validate_cam_name(name: str) -> str:
     return name
 
 
+class CamSettings(BaseModel):
+    by_id: str
+    format: str
+    width: int = Field(ge=16, le=7680)
+    height: int = Field(ge=16, le=4320)
+    fps: int = Field(ge=1, le=240)
+    profile: str = "balanced"
+
+
 @app.post("/api/cam/{name}")
-def api_save_cam(
-    name: str,
-    by_id: str = Form(...),
-    format: str = Form(...),
-    width: int = Form(...),
-    height: int = Form(...),
-    fps: int = Form(...),
-    profile: str = Form("balanced"),
-) -> JSONResponse:
+def api_save_cam(name: str, body: CamSettings) -> JSONResponse:
     _validate_cam_name(name)
-    if format not in ALLOWED_FORMATS:
+    if body.format not in ALLOWED_FORMATS:
         raise HTTPException(400, f"format must be one of {sorted(ALLOWED_FORMATS)}")
-    if not (16 <= width <= 7680 and 16 <= height <= 4320 and 1 <= fps <= 240):
-        raise HTTPException(400, "width/height/fps out of sane range")
     profiles = load_profiles()
-    if profile not in profiles:
+    if body.profile not in profiles:
         raise HTTPException(400, f"profile must be one of {list(profiles.keys())}")
 
     doc = load_cameras()
     cams = doc.setdefault("cameras", [])
     new_entry = {
-        "name": name, "by_id": by_id, "format": format,
-        "width": width, "height": height, "fps": fps, "profile": profile,
+        "name": name, "by_id": body.by_id, "format": body.format,
+        "width": body.width, "height": body.height, "fps": body.fps,
+        "profile": body.profile,
     }
     for i, c in enumerate(cams):
         if c["name"] == name:

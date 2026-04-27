@@ -20,7 +20,7 @@ MEDIAMTX_URL="https://github.com/bluenviron/mediamtx/releases/download/${MEDIAMT
 MEDIAMTX_SUMS_URL="https://github.com/bluenviron/mediamtx/releases/download/${MEDIAMTX_VERSION}/checksums.sha256"
 MEDIAMTX_BIN="/usr/local/bin/mediamtx"
 
-APT_DEPS=(ffmpeg v4l-utils python3-fastapi python3-uvicorn python3-jinja2 python3-yaml python3-multipart curl tar)
+APT_DEPS=(ffmpeg v4l-utils python3-fastapi python3-uvicorn python3-jinja2 python3-yaml curl tar)
 
 bold()  { printf '\033[1m%s\033[0m\n' "$*"; }
 green() { printf '\033[32m%s\033[0m\n' "$*"; }

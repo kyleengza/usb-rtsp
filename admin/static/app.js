@@ -153,13 +153,22 @@ function wireUpCard(card) {
 
     const fd = new FormData(form);
     const [w, h] = fd.get("resolution").split("x");
-    fd.delete("resolution");
-    fd.set("width", w);
-    fd.set("height", h);
+    const body = {
+      by_id: fd.get("by_id"),
+      format: fd.get("format"),
+      width: parseInt(w, 10),
+      height: parseInt(h, 10),
+      fps: parseInt(fd.get("fps"), 10),
+      profile: fd.get("profile"),
+    };
 
     const name = card.dataset.cam;
     try {
-      const r = await fetch(`/api/cam/${name}`, { method: "POST", body: fd });
+      const r = await fetch(`/api/cam/${name}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
       const j = await r.json();
       if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
       status.classList.add("ok");
