@@ -30,7 +30,7 @@ class RenderCtx:
     plugin: object               # core.loader.Plugin
     config_dir: Path
     profiles: dict               # etc/profiles.yml contents
-    quality_presets: dict        # etc/quality-presets.yml contents
+    quality_presets: dict        # etc/quality-presets.yml contents — relay/usb both use this
     stream_user: str | None      # if stream auth on, username; else None
     stream_pass: str | None
 

@@ -9,21 +9,24 @@
 
   {% for s in relay_sources %}
   {% set is_disabled = s.enabled is defined and not s.enabled %}
+  {% set live = s._live %}
   <article class="card{% if is_disabled %} input-disabled{% endif %}" data-relay="{{ s.name }}">
     <header>
       <h3>{{ s.name }}</h3>
-      <span class="ready-dot" data-ready></span>
+      <span class="ready-dot{% if live and live.ready %} ok{% elif live %} err{% endif %}" data-ready></span>
       <label class="switch" title="enable / disable {{ s.name }}">
         <input type="checkbox" data-input-toggle="relay/{{ s.name }}" {% if not is_disabled %}checked{% endif %}>
         <span class="slider"></span>
       </label>
+      <button type="button" class="card-tab" data-act="edit-relay">Edit</button>
       <button type="button" class="card-tab" data-act="delete-relay">Remove</button>
     </header>
     <ul class="urls">
       <li>
         <span class="url-label url-best">WebRTC</span>
-        <code><a href="http://{{ creds_at }}{{ host }}:8889/{{ s.name }}/" target="_blank" rel="noopener">http://{{ creds_at }}{{ host }}:8889/{{ s.name }}/</a></code>
+        <code>http://{{ creds_at }}{{ host }}:8889/{{ s.name }}/</code>
         <button type="button" class="copy" data-copy="http://{{ creds_at }}{{ host }}:8889/{{ s.name }}/">copy</button>
+        <a class="open-here" href="/preview/{{ s.name }}/" target="_blank" rel="noopener">open here ↗</a>
       </li>
       <li>
         <span class="url-label">HLS</span>
@@ -37,11 +40,22 @@
       </li>
     </ul>
     <div class="meta">
-      <div class="device">upstream: <code>{{ s.url }}</code>{% if s.transport %} via {{ s.transport }}{% endif %}</div>
+      <div class="device">
+        upstream: <code>{{ s.url }}</code>
+        {% if s.transport %} via {{ s.transport }}{% endif %}
+        {% if s.encode %} <span class="hint-chip">re-encode</span>{% endif %}
+      </div>
     </div>
     <div class="live">
-      <span data-readers>0 viewers</span>
-      · <span data-bytes>—</span> received
+      {% if live %}
+        {% if live.ready %}
+          pulling — {{ live.tracks or 'no tracks' }} — {{ live.bytes_received }} B recv'd · {{ live.readers }} viewer{% if live.readers != 1 %}s{% endif %}
+        {% else %}
+          <span class="err-text">not ready — sourceOnDemand idle, or upstream unreachable</span>
+        {% endif %}
+      {% else %}
+        no live state (mediamtx not reporting yet)
+      {% endif %}
     </div>
   </article>
   {% endfor %}
@@ -61,7 +75,25 @@
           <option value="udp_multicast">udp_multicast</option>
         </select>
       </label>
+      <details class="advanced" style="grid-column: 1/-1">
+        <summary>Re-encode (optional, downsize/transcode upstream) ▾</summary>
+        <div class="advanced-grid">
+          <label class="adv"><input type="checkbox" name="encode_enabled"> Enable re-encode</label>
+          <label class="adv">Quality preset
+            <select name="encode_preset">
+              <option value="low">low</option>
+              <option value="medium" selected>medium</option>
+              <option value="high">high</option>
+            </select>
+          </label>
+          <label class="adv">Bitrate (kbps) <input type="number" name="encode_bitrate_kbps" min="100" max="20000" placeholder="auto"></label>
+          <label class="adv">Width <input type="number" name="encode_width" min="16" max="7680" placeholder="upstream"></label>
+          <label class="adv">Height <input type="number" name="encode_height" min="16" max="4320" placeholder="upstream"></label>
+          <label class="adv">FPS <input type="number" name="encode_fps" min="1" max="240" placeholder="upstream"></label>
+        </div>
+      </details>
       <div class="actions">
+        <button type="button" data-act="probe-source">Test upstream</button>
         <button type="submit">Add &amp; reload</button>
       </div>
       <div class="form-status" data-relay-status></div>
