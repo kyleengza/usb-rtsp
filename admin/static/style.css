@@ -152,6 +152,8 @@ section > h2 {
 .urls code a { color: var(--accent); text-decoration: none; }
 .urls code a:hover { text-decoration: underline; }
 .url-note { color: var(--muted); font-style: italic; font-size: 0.78rem; }
+.open-here { color: var(--ok); text-decoration: none; font-size: 0.78rem; padding: 0.05rem 0.45rem; border: 1px solid var(--ok); border-radius: 4px; }
+.open-here:hover { background: var(--ok); color: var(--panel); }
 
 .copy { padding: 0.05rem 0.45rem; font-size: 0.72rem; color: var(--muted); border-color: var(--border); }
 .copy:hover { color: var(--accent); }
