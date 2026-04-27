@@ -163,15 +163,17 @@ def build_config(cameras_doc: dict, profiles_doc: dict) -> dict:
         # control api (loopback only — admin panel talks to this)
         "api": True,
         "apiAddress": "127.0.0.1:9997",
-        # rtsp server: TCP-only for clients. UDP RTP looks great on a wired
-        # LAN but falls apart on WiFi at 4 Mbps H.264 (packet loss → mobile
-        # players give up after a few seconds). TCP is reliable everywhere
-        # and avoids per-client transport hunting (VLC desktop "Show All →
-        # RTP-over-RTSP-TCP", Android RTSP TCP toggle, etc.). Latency cost
-        # over LAN is negligible.
+        # rtsp server — both TCP and UDP allowed. VLC desktop has a buggy
+        # retry path when a TCP-only server returns 461 to its first UDP
+        # SETUP (sends SETUP without DESCRIBE → mediamtx logs "invalid URL
+        # ((null))" → VLC gives up). With UDP enabled, VLC negotiates UDP
+        # cleanly on a fresh DESCRIBE → SETUP → PLAY. Most Android RTSP
+        # players default to TCP. The phone-on-WiFi-on-VLC-Android case
+        # (where UDP packet loss kills the session) is the one combination
+        # the user has to fix client-side: force RTSP-TCP in app settings.
         "rtsp": True,
         "rtspAddress": ":8554",
-        "rtspTransports": ["tcp"],
+        "rtspTransports": ["tcp", "udp"],
         # disable other protocols (we're RTSP-only by plan; flip these later if needed)
         "rtmp": False,
         "hls": False,
