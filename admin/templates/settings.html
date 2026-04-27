@@ -115,7 +115,13 @@
       </label>
       <label>Lines <input type="number" id="log-lines" value="100" min="10" max="500" step="10"></label>
       <button data-act="refresh-logs">Refresh</button>
-      <label class="tail-toggle"><input type="checkbox" id="log-tail"> Live tail (2 s)</label>
+      <label class="tail-toggle">
+        <span>Live tail (2 s)</span>
+        <span class="switch">
+          <input type="checkbox" id="log-tail">
+          <span class="slider"></span>
+        </span>
+      </label>
       <span id="log-status" class="log-status"></span>
     </div>
     <pre id="logs">— click Refresh, or tick Live tail —</pre>

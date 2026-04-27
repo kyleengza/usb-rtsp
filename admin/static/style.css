@@ -283,8 +283,8 @@ button.danger:hover { background: var(--err); color: white; }
 .log-controls { display: flex; gap: 0.5rem; align-items: center; margin: 0.6rem 0 0.4rem; flex-wrap: wrap; }
 .log-controls input[type=number] { background: #0a0d12; color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.2rem 0.4rem; width: 5rem; }
 .log-controls select { background: #0a0d12; color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.2rem 0.4rem; }
-.tail-toggle { display: flex; align-items: center; gap: 0.3rem; color: var(--muted); cursor: pointer; }
-.tail-toggle input { accent-color: var(--accent); }
+.tail-toggle { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); cursor: pointer; }
+.tail-toggle .switch { display: inline-block; }
 .log-status { color: var(--muted); font-size: 0.75rem; margin-left: auto; }
 .log-status.tail { color: var(--ok); }
 #logs {
