@@ -192,15 +192,18 @@ def build_config(cameras_doc: dict, profiles_doc: dict, qpresets_doc: dict | Non
         "rtsp": True,
         "rtspAddress": ":8554",
         "rtspTransports": ["tcp", "udp"],
-        # HLS — http://<host>:8888/<path>/index.m3u8 — works in VLC,
-        # browsers, every smart-TV. Adds ~3 s latency (segment buffering).
+        # HLS — http://<host>:8888/<path>/index.m3u8 — universal player
+        # compat via mpegts variant (.ts segments). LL-HLS / fMP4 (the
+        # `lowLatency` variant) trips VLC older than 3.0.18 with a
+        # confusing "Codec not supported" error even though the H.264
+        # bytes are fine — switch to mpegts for the broadest reach.
+        # Latency ≈ 5 s with 1 s segments × 5 in-window.
         "hls": True,
         "hlsAddress": ":8888",
         "hlsAlwaysRemux": False,
-        "hlsVariant": "lowLatency",
-        "hlsSegmentCount": 7,
+        "hlsVariant": "mpegts",
+        "hlsSegmentCount": 5,
         "hlsSegmentDuration": "1s",
-        "hlsPartDuration": "200ms",
         "hlsAllowOrigin": "*",
         # WebRTC — http://<host>:8889/<path> — sub-second latency, browser
         # native (Chrome/Safari/Firefox), no app needed. mediamtx handles ICE.
