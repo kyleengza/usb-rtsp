@@ -148,10 +148,15 @@ def build_config(cameras_doc: dict, profiles_doc: dict) -> dict:
         # control api (loopback only — admin panel talks to this)
         "api": True,
         "apiAddress": "127.0.0.1:9997",
-        # rtsp server
+        # rtsp server: TCP-only for clients. UDP RTP looks great on a wired
+        # LAN but falls apart on WiFi at 4 Mbps H.264 (packet loss → mobile
+        # players give up after a few seconds). TCP is reliable everywhere
+        # and avoids per-client transport hunting (VLC desktop "Show All →
+        # RTP-over-RTSP-TCP", Android RTSP TCP toggle, etc.). Latency cost
+        # over LAN is negligible.
         "rtsp": True,
         "rtspAddress": ":8554",
-        "rtspTransports": ["tcp", "udp"],
+        "rtspTransports": ["tcp"],
         # disable other protocols (we're RTSP-only by plan; flip these later if needed)
         "rtmp": False,
         "hls": False,
