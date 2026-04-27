@@ -131,26 +131,56 @@ def verify_cookie(value: str | None) -> str | None:
 
 def pam_authenticate(username: str, password: str) -> bool:
     """Authenticate via PAM. Returns True iff the credentials are valid for
-    a *real* local user. Disallows root and any user with UID < 1000 to make
-    accidental privilege escalation harder.
+    a *real* local user. Disallows root and any user with UID < 1000 to
+    make accidental privilege escalation harder.
+
+    Uses Debian's python3-pam package — the uppercase `PAM` C-extension,
+    NOT the PyPI `python-pam` lib (different upstream, different API).
     """
+    import sys
     if not username or not password:
-        return False
-    # cheap pre-filter — PAM wouldn't accept root anyway with our service file
-    # but defence in depth costs nothing.
+        print("[pam_auth] empty user/pass", file=sys.stderr); return False
     if username == "root":
-        return False
+        print("[pam_auth] root denied", file=sys.stderr); return False
     try:
         import pwd
         u = pwd.getpwnam(username)
         if u.pw_uid < 1000:
-            return False
+            print(f"[pam_auth] uid {u.pw_uid} < 1000 denied", file=sys.stderr); return False
     except KeyError:
-        return False
+        print(f"[pam_auth] unknown user {username!r}", file=sys.stderr); return False
     try:
-        import pam  # type: ignore
-    except ImportError:
-        return False
-    p = pam.pam()
+        import PAM  # type: ignore
+    except ImportError as e:
+        print(f"[pam_auth] PAM import failed: {e}", file=sys.stderr); return False
+
     service = load_config().get("panel", {}).get("pam_service", "usb-rtsp-admin")
-    return bool(p.authenticate(username, password, service=service))
+
+    def _conv(auth, query_list, *args):
+        out = []
+        for q in query_list:
+            prompt, qtype = q
+            if qtype == PAM.PAM_PROMPT_ECHO_OFF:
+                out.append((password, 0))
+            elif qtype == PAM.PAM_PROMPT_ECHO_ON:
+                out.append((username, 0))
+            else:
+                out.append(("", 0))
+        return out
+
+    try:
+        auth = PAM.pam()
+        auth.start(service)
+        auth.set_item(PAM.PAM_USER, username)
+        auth.set_item(PAM.PAM_CONV, _conv)
+        auth.authenticate()
+        auth.acct_mgmt()
+        return True
+    except PAM.error as e:
+        print(f"[pam_auth] PAM.error service={service!r} user={username!r}: {e}", file=sys.stderr)
+        return False
+    except Exception as e:
+        import traceback
+        print(f"[pam_auth] exception {type(e).__name__}: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        return False
