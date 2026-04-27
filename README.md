@@ -229,6 +229,56 @@ have client isolation enabled.
 sizes they support for YUYV. Switch to MJPG in the panel — it's more reliable
 and lower CPU anyway.
 
+## Plugins
+
+usb-rtsp ships with the **usb** plugin bundled. Other plugins live as
+user-installed packages under `~/.local/share/usb-rtsp/plugins/<name>/`
+and are managed independently of the main repo:
+
+```sh
+./install.sh --list-plugins                          # bundled vs user
+./install.sh --add-plugin <git-url-or-local-path>    # clone or copy
+./install.sh --remove-plugin <name>                  # rm user dir
+./install.sh --enable-plugin <name>                  # add to enabled set
+./install.sh --disable-plugin <name>                 # remove
+```
+
+The same actions surface in the panel at `Settings → Plugins`:
+
+- **Add plugin ▾** — paste a git URL or a local path; the panel clones
+  or copies into `~/.local/share/usb-rtsp/plugins/`, then schedules an
+  admin restart so the new plugin's routes/templates load.
+- Per-plugin badge: **bundled** (ships with usb-rtsp, can't uninstall)
+  or **user** (`Uninstall` button available inside Details).
+- Toggle switch flips enable/disable.
+
+Bundled plugins can never be uninstalled via the panel or API
+(`POST /api/plugins/uninstall/usb` returns 422).
+
+### Developing a plugin
+
+The two non-default plugins (relay, inference) live in this repo at
+`plugins-extra/<name>/` for development convenience. `install.sh`
+symlinks them into `~/.local/share/usb-rtsp/plugins/` on first run, so
+edits in the repo are live and the loader still treats them as
+user-installed (so they're uninstallable). To ship a plugin
+independently later, move the directory to its own git repo and have
+users `--add-plugin <url>` it instead.
+
+The plugin contract is one Python package with up to four entry-points:
+
+```
+plugins-extra/<name>/
+├── manifest.yml              name, description, version, default_enabled
+├── __init__.py               register(app, ctx),
+│                              section_context(ctx, request) -> dict,
+│                              list_inputs(ctx) -> [{name, enabled, label}]
+├── render.py                 render_paths(ctx) -> {path: mediamtx-cfg}
+├── api.py                    FastAPI APIRouter (mounted at /api/<name>/...)
+├── templates/section.html    Jinja partial included on the dashboard
+└── static/<name>.js          per-plugin JS, served at /static/<name>/
+```
+
 ## Authentication (optional)
 
 Default: panel and streams are open on the LAN. Lock them down with:
