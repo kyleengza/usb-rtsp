@@ -59,17 +59,17 @@ section { margin: 1.5rem 0; }
   .recovery { grid-column: 2; }
 }
 
-/* Very wide (3-column ultrawide / 1440p+): give streams its own column
-   so cameras + host stack vertically alongside it without dead space. */
+/* Very wide (3-column ultrawide / 1440p+):
+   cameras │ active streams (alone) │ host + service recovery */
 @media (min-width: 1700px) {
   main {
     grid-template-columns: minmax(0, 5fr) minmax(0, 3fr) minmax(0, 3fr);
   }
   .cameras    { grid-column: 1; grid-row: 1 / span 6; }
-  .streams    { grid-column: 2; grid-row: 1; }
-  .host       { grid-column: 2; grid-row: 2; }
-  .recovery   { grid-column: 3; grid-row: 1; }
-  .new-cams   { grid-column: 3; grid-row: 2; }
+  .streams    { grid-column: 2; grid-row: 1 / span 6; }
+  .host       { grid-column: 3; grid-row: 1; }
+  .recovery   { grid-column: 3; grid-row: 2; }
+  .new-cams   { grid-column: 3; grid-row: 3; }
 }
 section > h2 {
   font-size: 1.05rem;
