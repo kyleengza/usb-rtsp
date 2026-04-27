@@ -50,12 +50,17 @@ def ffmpeg_input_format(fourcc: str) -> str:
 
 
 def h264_bitrate(width: int, height: int) -> str:
-    """Sensible bitrate target for libx264 ultrafast given a resolution."""
+    """Sensible bitrate target for libx264 ultrafast given a resolution.
+
+    Tuned for WiFi-tethered phone clients — 'ultrafast' produces less
+    efficient bitstreams than 'medium', so we leave headroom. Bump these
+    up if you only consume from wired desktop clients.
+    """
     pixels = width * height
-    if pixels >= 1920 * 1080: return "4M"
-    if pixels >= 1280 * 720:  return "2500k"
-    if pixels >= 640 * 480:   return "1200k"
-    return "800k"
+    if pixels >= 1920 * 1080: return "2500k"
+    if pixels >= 1280 * 720:  return "1500k"
+    if pixels >= 640 * 480:   return "800k"
+    return "500k"
 
 
 def ffmpeg_cmd(cam: dict, profile: dict) -> str:
