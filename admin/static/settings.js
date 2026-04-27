@@ -47,9 +47,13 @@
   });
 
   // ─── stream credential rotation ────────────────────────────────────────
-  // The password is never read directly by humans — it's embedded in
-  // every URL on the dashboard. We just expose a Rotate button + an
-  // auto-rotate timer toggle.
+  // The password is never displayed to humans:
+  //   - dashboard URL pills are server-side rendered with creds embedded
+  //     for external players to copy/paste
+  //   - the iframe preview goes through /preview/<cam>/ proxy and doesn't
+  //     need the password client-side
+  // The settings card just shows the username, a manual Rotate button,
+  // and the auto-rotate timer toggle.
 
   async function loadStreamCreds() {
     try {
