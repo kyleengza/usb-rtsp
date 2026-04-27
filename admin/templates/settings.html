@@ -48,7 +48,7 @@
 </div>
 
 {% for p in plugins_meta %}
-<section class="plugin-block" data-plugin-name="{{ p.name }}">
+<section class="plugin-block" id="plugin-{{ p.name }}" data-plugin-name="{{ p.name }}">
   <header>
     <h2>{{ p.name }}</h2>
     <span class="ver">v{{ p.version }}</span>
@@ -99,6 +99,12 @@
     </ul>
     {% elif p.enabled %}
     <p class="hint">No inputs configured for {{ p.name }} yet.</p>
+    {% endif %}
+
+    {# Plugin-supplied settings panel (templates/settings.html). Sees the
+       same Jinja globals as the dashboard section template. #}
+    {% if p.enabled and p.settings_template %}
+      {% include p.settings_template %}
     {% endif %}
   </div>
 </section>

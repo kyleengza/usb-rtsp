@@ -13,14 +13,23 @@
   <article class="card{% if is_disabled %} input-disabled{% endif %}" data-relay="{{ s.name }}">
     <header>
       <h3>{{ s.name }}</h3>
-      <span class="ready-dot{% if live and live.ready %} ok{% elif live %} err{% endif %}" data-ready></span>
+      <span class="ready-dot{% if live and live.ready %} ok{% elif live and live.readers and live.readers > 0 %} err{% endif %}" title="{% if live and live.ready %}pulling{% elif live and live.readers and live.readers > 0 %}upstream unreachable{% elif live %}idle (on-demand){% else %}no state{% endif %}" data-ready></span>
       <label class="switch" title="enable / disable {{ s.name }}">
         <input type="checkbox" data-input-toggle="relay/{{ s.name }}" {% if not is_disabled %}checked{% endif %}>
         <span class="slider"></span>
       </label>
-      <button type="button" class="card-tab" data-act="edit-relay">Edit</button>
-      <button type="button" class="card-tab" data-act="delete-relay">Remove</button>
+      <div class="card-tabs">
+        <button type="button" class="card-tab" data-act="preview">Live preview ▾</button>
+        <button type="button" class="card-tab" data-act="settings">Settings ▾</button>
+        <button type="button" class="card-tab" data-act="delete-relay">Remove</button>
+      </div>
     </header>
+    <div class="preview" hidden>
+      <div class="preview-controls">
+        <button type="button" class="copy" data-act="preview-reconnect">Reconnect</button>
+      </div>
+      <iframe data-preview-frame loading="lazy" allow="autoplay" allowfullscreen></iframe>
+    </div>
     <ul class="urls">
       <li>
         <span class="url-label url-best">WebRTC</span>
@@ -50,55 +59,95 @@
       {% if live %}
         {% if live.ready %}
           pulling — {{ live.tracks or 'no tracks' }} — {{ live.bytes_received }} B recv'd · {{ live.readers }} viewer{% if live.readers != 1 %}s{% endif %}
+        {% elif live.readers and live.readers > 0 %}
+          <span class="err-text">upstream unreachable — {{ live.readers }} viewer{% if live.readers != 1 %}s{% endif %} waiting on the pull</span>
         {% else %}
-          <span class="err-text">not ready — sourceOnDemand idle, or upstream unreachable</span>
+          <span class="hint-text">idle — {% if s.encode %}re-encode{% else %}upstream{% endif %} only runs while something subscribes. Probe to test upstream.</span>
         {% endif %}
       {% else %}
         no live state (mediamtx not reporting yet)
       {% endif %}
+      <button type="button" class="card-tab" data-act="probe-relay" style="margin-left:.5em">Probe</button>
+      <span class="form-status" data-probe-result></span>
+    </div>
+
+    <div class="settings-wrap" hidden>
+    <form class="settings" data-relay-form="{{ s.name }}">
+      <label>Upstream URL
+        <input type="text" name="url" value="{{ s.url }}" required>
+      </label>
+      <label>User
+        <input type="text" name="user" value="{{ s.user or '' }}" placeholder="(none)">
+      </label>
+      <label>Password
+        <input type="password" name="pass" value="{{ s['pass'] or '' }}" placeholder="(none)">
+      </label>
+      <label>Transport
+        <select name="transport">
+          <option value=""              {% if not s.transport %}selected{% endif %}>(auto)</option>
+          <option value="tcp"           {% if s.transport == 'tcp' %}selected{% endif %}>tcp</option>
+          <option value="udp"           {% if s.transport == 'udp' %}selected{% endif %}>udp</option>
+          <option value="udp_multicast" {% if s.transport == 'udp_multicast' %}selected{% endif %}>udp_multicast</option>
+        </select>
+      </label>
+
+      <details class="advanced" {% if s.encode %}open{% endif %} style="grid-column: 1/-1">
+        <summary>Re-encode (downsize/transcode upstream for cross-browser WebRTC) ▾</summary>
+        <div class="advanced-grid">
+          <label class="adv">
+            <input type="checkbox" name="encode_enabled" {% if s.encode %}checked{% endif %}>
+            Enable re-encode
+          </label>
+          <label class="adv">Quality preset
+            <select name="encode_preset">
+              {% set ep = (s.encode.preset if s.encode else 'medium') %}
+              <option value="low"    {% if ep == 'low' %}selected{% endif %}>low</option>
+              <option value="medium" {% if ep == 'medium' %}selected{% endif %}>medium</option>
+              <option value="high"   {% if ep == 'high' %}selected{% endif %}>high</option>
+            </select>
+          </label>
+          <label class="adv">Bitrate (kbps)
+            <input type="number" name="encode_bitrate_kbps" min="100" max="20000"
+                   value="{{ s.encode.bitrate_kbps if s.encode and s.encode.bitrate_kbps else '' }}"
+                   placeholder="auto">
+          </label>
+          {% set ew = s.encode.width if s.encode and s.encode.width else 0 %}
+          {% set eh = s.encode.height if s.encode and s.encode.height else 0 %}
+          {% set cur_res = (ew ~ 'x' ~ eh) if (ew and eh) else '' %}
+          <label class="adv">Resolution
+            <select name="encode_resolution">
+              <option value=""           {% if not cur_res %}selected{% endif %}>(upstream native)</option>
+              <option value="1920x1080"  {% if cur_res == '1920x1080' %}selected{% endif %}>1920×1080</option>
+              <option value="1280x720"   {% if cur_res == '1280x720'  %}selected{% endif %}>1280×720</option>
+              <option value="854x480"    {% if cur_res == '854x480'   %}selected{% endif %}>854×480</option>
+              <option value="640x360"    {% if cur_res == '640x360'   %}selected{% endif %}>640×360</option>
+              {% if cur_res and cur_res not in ['1920x1080','1280x720','854x480','640x360'] %}
+                <option value="{{ cur_res }}" selected>{{ ew }}×{{ eh }} (custom)</option>
+              {% endif %}
+            </select>
+          </label>
+          <label class="adv">FPS
+            <input type="number" name="encode_fps" min="1" max="240"
+                   value="{{ s.encode.fps if s.encode and s.encode.fps else '' }}"
+                   placeholder="upstream">
+          </label>
+        </div>
+      </details>
+
+      <div class="actions">
+        <button type="button" data-act="probe-form">Test upstream</button>
+        <button type="submit">Save &amp; reload</button>
+      </div>
+      <div class="form-status" data-form-status></div>
+    </form>
     </div>
   </article>
   {% endfor %}
 
-  <details class="advanced">
-    <summary>Add a relay ▾</summary>
-    <form data-relay-add>
-      <label class="adv">Name <input type="text" name="name" required pattern="[a-z][a-z0-9_-]{0,15}" placeholder="e.g. doorbell"></label>
-      <label class="adv">Upstream URL <input type="text" name="url" required placeholder="rtsp://192.168.1.50/cam"></label>
-      <label class="adv">User (optional) <input type="text" name="user"></label>
-      <label class="adv">Password (optional) <input type="password" name="pass"></label>
-      <label class="adv">Transport
-        <select name="transport">
-          <option value="">(auto)</option>
-          <option value="tcp">tcp</option>
-          <option value="udp">udp</option>
-          <option value="udp_multicast">udp_multicast</option>
-        </select>
-      </label>
-      <details class="advanced" style="grid-column: 1/-1">
-        <summary>Re-encode (optional, downsize/transcode upstream) ▾</summary>
-        <div class="advanced-grid">
-          <label class="adv"><input type="checkbox" name="encode_enabled"> Enable re-encode</label>
-          <label class="adv">Quality preset
-            <select name="encode_preset">
-              <option value="low">low</option>
-              <option value="medium" selected>medium</option>
-              <option value="high">high</option>
-            </select>
-          </label>
-          <label class="adv">Bitrate (kbps) <input type="number" name="encode_bitrate_kbps" min="100" max="20000" placeholder="auto"></label>
-          <label class="adv">Width <input type="number" name="encode_width" min="16" max="7680" placeholder="upstream"></label>
-          <label class="adv">Height <input type="number" name="encode_height" min="16" max="4320" placeholder="upstream"></label>
-          <label class="adv">FPS <input type="number" name="encode_fps" min="1" max="240" placeholder="upstream"></label>
-        </div>
-      </details>
-      <div class="actions">
-        <button type="button" data-act="probe-source">Test upstream</button>
-        <button type="submit">Add &amp; reload</button>
-      </div>
-      <div class="form-status" data-relay-status></div>
-    </form>
-  </details>
+  {% if not relay_sources %}
+  <p class="hint">Add a new relay from the
+    <a href="/settings#plugin-relay">Settings → relay</a> page.</p>
+  {% endif %}
 </section>
 
 <script src="/static/relay/relay.js"></script>

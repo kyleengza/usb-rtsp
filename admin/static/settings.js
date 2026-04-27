@@ -98,17 +98,37 @@
   });
 
   // ─── plugin block fold/unfold ──────────────────────────────────────────
+  function setPluginFold(block, open) {
+    const body = block?.querySelector('.plugin-body');
+    const btn  = block?.querySelector('[data-act=fold-plugin]');
+    if (!body || !btn) return;
+    body.hidden = !open;
+    btn.classList.toggle("open", open);
+    btn.textContent = open ? "Hide ▴" : "Details ▾";
+  }
+
   $$('[data-act=fold-plugin]').forEach(btn => {
     btn.addEventListener("click", () => {
       const block = btn.closest('.plugin-block');
       const body = block?.querySelector('.plugin-body');
       if (!body) return;
-      const isOpen = !body.hidden;
-      body.hidden = isOpen;
-      btn.classList.toggle("open", !isOpen);
-      btn.textContent = isOpen ? "Details ▾" : "Hide ▴";
+      setPluginFold(block, body.hidden);
     });
   });
+
+  // Open the targeted plugin block when /settings is loaded with a
+  // hash like #plugin-relay (e.g. follow the dashboard "no relays" hint).
+  function openPluginByHash() {
+    const m = location.hash.match(/^#plugin-([a-z0-9_-]+)$/i);
+    if (!m) return;
+    const block = document.getElementById(`plugin-${m[1]}`);
+    if (block) {
+      setPluginFold(block, true);
+      block.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+  openPluginByHash();
+  window.addEventListener("hashchange", openPluginByHash);
 
   // ─── stream credential rotation ────────────────────────────────────────
   // The password is never displayed to humans:

@@ -163,13 +163,20 @@ def make_router(ctx) -> APIRouter:
         target = next((s for s in sources if s.get("name") == name), None)
         if target is None:
             raise HTTPException(404, "no such source")
+        # PATCH semantics: distinguish "field omitted" (skip) from "explicit
+        # null" (clear). Pydantic v2 exposes the set of fields the client
+        # actually supplied via model_fields_set.
+        sent = body.model_fields_set
         for k, v in (("url", body.url), ("user", body.user), ("transport", body.transport)):
             if v is not None:
                 target[k] = v
         if body.pass_ is not None:
             target["pass"] = body.pass_
-        if body.encode is not None:
-            target["encode"] = {k: v for k, v in body.encode.model_dump().items() if v is not None}
+        if "encode" in sent:
+            if body.encode is None:
+                target.pop("encode", None)
+            else:
+                target["encode"] = {k: v for k, v in body.encode.model_dump().items() if v is not None}
         _save_sources(cfg_dir, sources)
         ok, msg = _render_config()
         if not ok:

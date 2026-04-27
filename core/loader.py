@@ -46,6 +46,8 @@ class Plugin:
     module: Any | None = None       # imported python module (None until import)
     enabled: bool = False
     section_template: str = ""      # "<name>/section.html" if templates/section.html exists
+    settings_template: str = ""     # "<name>/settings.html" if templates/settings.html exists
+    order: int = 100                # dashboard render order (low = top); from manifest
 
     @property
     def title(self) -> str:
@@ -87,6 +89,9 @@ def discover_plugins() -> list[Plugin]:
             section_tpl = ""
             if (d / "templates" / "section.html").exists():
                 section_tpl = f"{name}/section.html"
+            settings_tpl = ""
+            if (d / "templates" / "settings.html").exists():
+                settings_tpl = f"{name}/settings.html"
             p = Plugin(
                 name=name,
                 description=str(m.get("description", "")),
@@ -96,9 +101,12 @@ def discover_plugins() -> list[Plugin]:
                 config_dir=CONFIG_DIR / name,
                 bundled=bundled,
                 section_template=section_tpl,
+                settings_template=settings_tpl,
+                order=int(m.get("order", 100)),
             )
             seen[name] = p
             out.append(p)
+    out.sort(key=lambda p: (p.order, p.name))
     return out
 
 
