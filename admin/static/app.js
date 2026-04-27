@@ -100,6 +100,27 @@ function escapeHtml(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+async function copyText(text) {
+  // Prefer modern API where allowed (HTTPS or localhost).
+  if (navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(text); return true; } catch {}
+  }
+  // Fallback for http://lan-ip: hidden textarea + execCommand.
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  ta.style.pointerEvents = "none";
+  document.body.appendChild(ta);
+  ta.select();
+  ta.setSelectionRange(0, text.length);
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch {}
+  document.body.removeChild(ta);
+  return ok;
+}
+
 // ─── per-camera form: cascading resolution/fps dropdowns ────────────────────
 
 function wireUpCard(card) {
@@ -250,19 +271,18 @@ function wireUpCard(card) {
     }
   });
 
-  // copy URL buttons
+  // copy URL buttons — navigator.clipboard.writeText() is blocked in
+  // insecure contexts (http://lan-ip), so we fall back to a hidden
+  // textarea + document.execCommand('copy'). Works in every browser
+  // we'd realistically use this panel from.
   $$(".copy", card).forEach(btn => {
     btn.addEventListener("click", async () => {
       const url = btn.dataset.copy;
-      try {
-        await navigator.clipboard.writeText(url);
-        const orig = btn.textContent;
-        btn.classList.add("ok");
-        btn.textContent = "copied";
-        setTimeout(() => { btn.textContent = orig; btn.classList.remove("ok"); }, 1200);
-      } catch {
-        btn.textContent = "ctrl-c it";
-      }
+      const orig = btn.textContent;
+      const ok = await copyText(url);
+      btn.classList.toggle("ok", ok);
+      btn.textContent = ok ? "copied" : "select+ctrl-c";
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove("ok"); }, 1500);
     });
   });
 
