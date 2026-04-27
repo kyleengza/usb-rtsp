@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>usb-rtsp · login</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  body { display: grid; place-items: center; min-height: 100vh; }
+  .login-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.4rem 1.6rem;
+    width: min(28rem, 92vw);
+  }
+  .login-card h1 { font-size: 1.05rem; margin: 0 0 0.4rem 0; letter-spacing: 0.02em; }
+  .login-card .sub { color: var(--muted); font-size: 0.82rem; margin-bottom: 1rem; }
+  .login-card label { display: block; margin-bottom: 0.7rem; }
+  .login-card label > span { display: block; color: var(--muted); font-size: 0.78rem; margin-bottom: 0.2rem; }
+  .login-card input {
+    width: 100%;
+    background: #0a0d12;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.45rem 0.6rem;
+    font: inherit;
+  }
+  .login-card button[type=submit] {
+    width: 100%;
+    margin-top: 0.4rem;
+    padding: 0.5rem;
+    font: inherit;
+    background: #1c2229;
+  }
+  .login-card .err {
+    background: rgba(248, 81, 73, 0.08);
+    color: var(--err);
+    border: 1px solid var(--err);
+    padding: 0.4rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.82rem;
+    margin-bottom: 0.8rem;
+  }
+  .login-card .hint {
+    color: var(--muted);
+    font-size: 0.72rem;
+    margin-top: 0.8rem;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<form class="login-card" method="post" action="/login">
+  <h1>usb-rtsp</h1>
+  <div class="sub">log in with your Pi user account</div>
+
+  {% if error %}
+    <div class="err">{{ error }}</div>
+  {% endif %}
+
+  {% if next_url %}
+    <input type="hidden" name="next" value="{{ next_url }}">
+  {% endif %}
+
+  <label>
+    <span>username</span>
+    <input type="text" name="username" autocomplete="username" autofocus required>
+  </label>
+
+  <label>
+    <span>password</span>
+    <input type="password" name="password" autocomplete="current-password" required>
+  </label>
+
+  <button type="submit">Log in</button>
+
+  <div class="hint">
+    Authenticates against this Pi's user accounts (PAM). Same credentials
+    you use over SSH. Session lasts {{ cookie_days }} days.
+  </div>
+</form>
+
+</body>
+</html>

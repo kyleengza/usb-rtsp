@@ -22,6 +22,16 @@ MEDIAMTX_BIN="/usr/local/bin/mediamtx"
 
 APT_DEPS=(ffmpeg v4l-utils python3-fastapi python3-uvicorn python3-jinja2 python3-yaml curl tar)
 
+# CLI flags
+ENABLE_AUTH=0
+DISABLE_AUTH=0
+for arg in "$@"; do
+  case "$arg" in
+    --enable-auth)  ENABLE_AUTH=1 ;;
+    --disable-auth) DISABLE_AUTH=1 ;;
+  esac
+done
+
 bold()  { printf '\033[1m%s\033[0m\n' "$*"; }
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
 warn()  { printf '\033[33m%s\033[0m\n' "$*"; }
@@ -37,6 +47,9 @@ missing=()
 for pkg in "${APT_DEPS[@]}"; do
   dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
 done
+if (( ENABLE_AUTH )); then
+  APT_DEPS+=(python3-pam)
+fi
 if (( ${#missing[@]} )); then
   bold "installing missing packages: ${missing[*]} (sudo required)…"
   sudo apt-get update -qq
@@ -44,6 +57,11 @@ if (( ${#missing[@]} )); then
   for pkg in "${missing[@]}"; do
     dpkg -s "$pkg" >/dev/null 2>&1 || die "$pkg still missing after apt-get install"
   done
+fi
+# refresh missing[] in case --enable-auth added new ones above
+if (( ENABLE_AUTH )) && ! dpkg -s python3-pam >/dev/null 2>&1; then
+  bold "installing python3-pam for --enable-auth (sudo required)…"
+  sudo apt-get install -y --no-install-recommends python3-pam
 fi
 green "✓ apt deps present"
 
@@ -88,6 +106,46 @@ if [[ ! -f "$CONFIG_DIR/cameras.yml" ]]; then
   green "✓ cameras.yml seeded ($(yq -r '.cameras | length' "$CONFIG_DIR/cameras.yml" 2>/dev/null || python3 -c "import yaml,sys; print(len(yaml.safe_load(open(sys.argv[1])).get('cameras', [])))" "$CONFIG_DIR/cameras.yml") cam(s))"
 else
   green "✓ cameras.yml exists (preserved)"
+fi
+
+# ── auth: opt-in / opt-out ──────────────────────────────────────────────────
+AUTH_YML="$CONFIG_DIR/auth.yml"
+PAM_SERVICE_FILE="/etc/pam.d/usb-rtsp-admin"
+STREAM_PASS_FILE="$CONFIG_DIR/.stream-pass"
+
+if (( ENABLE_AUTH )); then
+  bold "configuring auth (panel via PAM, streams via mediamtx)…"
+  if [[ ! -f "$PAM_SERVICE_FILE" ]]; then
+    bold "installing PAM service file at $PAM_SERVICE_FILE (sudo required)…"
+    sudo install -m 0644 /dev/stdin "$PAM_SERVICE_FILE" <<'PAMEOF'
+# usb-rtsp admin panel — local user authentication
+# Reuses the system's common auth/account stack.
+@include common-auth
+@include common-account
+PAMEOF
+  fi
+  # generate stream password if missing (24 url-safe random bytes)
+  if [[ ! -s "$STREAM_PASS_FILE" ]]; then
+    python3 -c 'import secrets; print(secrets.token_urlsafe(24))' \
+      > "$STREAM_PASS_FILE"
+    chmod 0600 "$STREAM_PASS_FILE"
+  fi
+  STREAM_PASS="$(cat "$STREAM_PASS_FILE")"
+  cat > "$AUTH_YML" <<YAMLEOF
+panel:
+  enabled: true
+  pam_service: usb-rtsp-admin
+  cookie_max_age_days: 7
+streams:
+  enabled: true
+  user: stream
+YAMLEOF
+  chmod 0600 "$AUTH_YML"
+  green "✓ auth enabled (panel + streams)"
+elif (( DISABLE_AUTH )); then
+  bold "disabling auth…"
+  rm -f "$AUTH_YML"
+  green "✓ auth disabled"
 fi
 
 bold "rendering mediamtx.yml…"
@@ -137,16 +195,34 @@ host="$(hostname).local"
 ip="$(ip -4 -o addr show wlan0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 || true)"
 [[ -z "$ip" ]] && ip="$(ip -4 -o addr show eth0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 || true)"
 
+if [[ -f "$AUTH_YML" ]] && grep -q "enabled: true" "$AUTH_YML"; then
+  STREAM_USER="$(python3 -c "import yaml; print(yaml.safe_load(open('$AUTH_YML'))['streams']['user'])" 2>/dev/null || echo stream)"
+  STREAM_PASS="$(cat "$STREAM_PASS_FILE" 2>/dev/null || echo '')"
+  AUTH_PREFIX="${STREAM_USER}:${STREAM_PASS}@"
+else
+  AUTH_PREFIX=""
+fi
 python3 -c "
 import yaml
 d = yaml.safe_load(open('$CONFIG_DIR/cameras.yml')) or {}
 for c in d.get('cameras', []):
-    print(f\"  rtsp://{c['name']}: rtsp://$host:8554/{c['name']}  ({c['format']} {c['width']}x{c['height']}@{c['fps']})\")
+    print(f\"  rtsp://{c['name']}: rtsp://${AUTH_PREFIX}$host:8554/{c['name']}  ({c['format']} {c['width']}x{c['height']}@{c['fps']})\")
 "
 echo
 echo "  admin:    http://$host:8080/    (or http://$ip:8080/)"
 echo "  snap:     snap <cam>            (saves to $CONFIG_DIR/snapshots/)"
 echo "  status:   systemctl --user status usb-rtsp"
-echo "  logs:     journalctl --user -u usb-rtsp -f"
+echo "  logs:     journalctl --user-unit=usb-rtsp.service -f"
+
+if [[ -f "$AUTH_YML" ]] && grep -q "enabled: true" "$AUTH_YML"; then
+  echo
+  bold "─── auth enabled ───"
+  echo "  panel:    log in with your Pi user account (PAM)"
+  echo "  streams:  username = ${STREAM_USER:-stream}"
+  echo "            password = $(cat "$STREAM_PASS_FILE")"
+  echo "            (also saved at $STREAM_PASS_FILE — keep it safe)"
+  echo "  disable:  ./install.sh --disable-auth"
+fi
+
 echo
 green "done."

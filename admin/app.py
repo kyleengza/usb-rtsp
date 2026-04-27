@@ -19,10 +19,13 @@ from typing import Any
 
 import yaml
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from admin import auth as auth_lib
 
 # ─── paths & constants ──────────────────────────────────────────────────────
 
@@ -47,6 +50,40 @@ ALLOWED_BFRAMES = {0, 1, 2, 3}
 app = FastAPI(title="usb-rtsp admin")
 templates = Jinja2Templates(directory=str(REPO_DIR / "admin" / "templates"))
 app.mount("/static", StaticFiles(directory=str(REPO_DIR / "admin" / "static")), name="static")
+
+
+# ─── auth middleware ────────────────────────────────────────────────────────
+
+PUBLIC_PATHS = {"/login", "/logout", "/healthz", "/api/auth/state"}
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if not auth_lib.panel_enabled():
+            request.state.user = None
+            return await call_next(request)
+
+        path = request.url.path
+        if path in PUBLIC_PATHS or path.startswith("/static/"):
+            request.state.user = None
+            return await call_next(request)
+
+        cookie = request.cookies.get(auth_lib.COOKIE_NAME)
+        user = auth_lib.verify_cookie(cookie)
+        if user:
+            request.state.user = user
+            return await call_next(request)
+
+        # not authenticated
+        if path.startswith("/api/"):
+            return JSONResponse({"detail": "auth required"}, status_code=401)
+        nxt = request.url.path
+        if request.url.query:
+            nxt += "?" + request.url.query
+        return RedirectResponse(f"/login?next={nxt}", status_code=303)
+
+
+app.add_middleware(AuthMiddleware)
 
 
 # ─── helpers ────────────────────────────────────────────────────────────────
@@ -751,3 +788,65 @@ def api_snapshots_cleanup(older_than_days: int = 7) -> JSONResponse:
 def healthz() -> JSONResponse:
     api = _api_get("/v3/paths/list")
     return JSONResponse({"ok": api is not None})
+
+
+# ─── auth routes ────────────────────────────────────────────────────────────
+
+@app.get("/api/auth/state")
+def api_auth_state(request: Request) -> JSONResponse:
+    user = getattr(request.state, "user", None)
+    return JSONResponse({
+        "panel_enabled": auth_lib.panel_enabled(),
+        "authenticated": bool(user),
+        "user": user,
+    })
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request, next: str = "/", error: str = "") -> HTMLResponse:
+    if not auth_lib.panel_enabled():
+        return RedirectResponse("/", status_code=303)
+    cfg = auth_lib.load_config()
+    return templates.TemplateResponse("login.html", {
+        "request": request,
+        "error": error,
+        "next_url": next or "/",
+        "cookie_days": cfg["panel"].get("cookie_max_age_days", 7),
+    })
+
+
+@app.post("/login")
+async def login_submit(request: Request) -> Response:
+    if not auth_lib.panel_enabled():
+        return RedirectResponse("/", status_code=303)
+    # Parse form manually — FastAPI's Form(...) annotation triggers a hard
+    # python-multipart import check that fails on Debian (python3-multipart
+    # is the wrong upstream lib). request.form() works fine for urlencoded.
+    form = await request.form()
+    username = (form.get("username") or "").strip()
+    password = form.get("password") or ""
+    next_url = form.get("next") or "/"
+    cookie_days = auth_lib.load_config()["panel"].get("cookie_max_age_days", 7)
+    if not auth_lib.pam_authenticate(username, password):
+        return templates.TemplateResponse("login.html", {
+            "request": request,
+            "error": "invalid username or password",
+            "next_url": next_url,
+            "cookie_days": cookie_days,
+        }, status_code=401)
+    cookie_value, max_age = auth_lib.make_cookie(username)
+    # only allow same-origin redirect targets to avoid open-redirect via ?next=
+    target = next_url if next_url.startswith("/") else "/"
+    resp = RedirectResponse(target, status_code=303)
+    resp.set_cookie(
+        auth_lib.COOKIE_NAME, cookie_value,
+        max_age=max_age, httponly=True, samesite="lax", path="/",
+    )
+    return resp
+
+
+@app.post("/logout")
+def logout() -> Response:
+    resp = RedirectResponse("/login", status_code=303)
+    resp.delete_cookie(auth_lib.COOKIE_NAME, path="/")
+    return resp

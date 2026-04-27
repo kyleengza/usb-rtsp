@@ -30,6 +30,36 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_DIR = Path(os.environ.get("USB_RTSP_CONFIG_DIR", Path.home() / ".config" / "usb-rtsp"))
 
+
+def _load_auth() -> dict:
+    """Read auth.yml + the secret stream password (if streams auth is on).
+
+    Returns {"streams_user": str|None, "streams_pass": str|None}.
+    """
+    auth_yml = DEFAULT_CONFIG_DIR / "auth.yml"
+    pass_file = DEFAULT_CONFIG_DIR / ".stream-pass"
+    out = {"streams_user": None, "streams_pass": None}
+    if not auth_yml.exists():
+        return out
+    try:
+        cfg = yaml.safe_load(auth_yml.read_text()) or {}
+    except (OSError, yaml.YAMLError):
+        return out
+    if not (cfg.get("streams") or {}).get("enabled"):
+        return out
+    user = (cfg["streams"].get("user") or "stream").strip()
+    if not pass_file.exists():
+        return out
+    try:
+        pw = pass_file.read_text().strip()
+    except OSError:
+        return out
+    if not pw:
+        return out
+    out["streams_user"] = user
+    out["streams_pass"] = pw
+    return out
+
 # v4l2 FOURCC → ffmpeg `-input_format` string. ffmpeg's v4l2 demuxer doesn't accept
 # the raw FOURCC; it wants its own codec/pixfmt names. (E.g. MJPG → "mjpeg", not "mjpg".)
 V4L2_TO_FFMPEG_INPUT_FORMAT = {
@@ -112,6 +142,9 @@ def ffmpeg_cmd(cam: dict, profile: dict, qpresets: dict | None = None) -> str:
         f"-video_size {w}x{h} -framerate {fps} "
         f"-i {by_id_path}"
     )
+    # publisher writes via loopback; mediamtx authInternalUsers grants the
+    # 127.0.0.1/32 source publish access without requiring credentials, so
+    # we don't have to embed a password in the runOnInit string.
     common_out = (
         f"-f rtsp -rtsp_transport {transport} "
         f"rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH"
@@ -172,6 +205,43 @@ def build_config(cameras_doc: dict, profiles_doc: dict, qpresets_doc: dict | Non
             "runOnInitRestart": True,
         }
 
+    # auth — authInternalUsers if enabled, else any/any (open).
+    auth = _load_auth()
+    if auth.get("streams_user") and auth.get("streams_pass"):
+        auth_block = {
+            "authMethod": "internal",
+            "authInternalUsers": [
+                # the loopback publisher (our runOnInit ffmpeg) gets
+                # unrestricted access from 127.0.0.1 with no creds
+                {
+                    "user": "any",
+                    "pass": "",
+                    "ips": ["127.0.0.1/32", "::1/128"],
+                    "permissions": [
+                        {"action": "publish"},
+                        {"action": "read"},
+                        {"action": "playback"},
+                        {"action": "api"},
+                        {"action": "metrics"},
+                        {"action": "pprof"},
+                    ],
+                },
+                # external readers must present these creds (HTTP basic for
+                # HLS/WebRTC, RTSP url-embedded for rtsp://user:pass@host/cam)
+                {
+                    "user": auth["streams_user"],
+                    "pass": auth["streams_pass"],
+                    "ips": [],
+                    "permissions": [
+                        {"action": "read"},
+                        {"action": "playback"},
+                    ],
+                },
+            ],
+        }
+    else:
+        auth_block = {"authMethod": "internal"}
+
     return {
         # global
         "logLevel": "info",
@@ -181,6 +251,7 @@ def build_config(cameras_doc: dict, profiles_doc: dict, qpresets_doc: dict | Non
         "readBufferCount": read_buf,
         "writeQueueSize": write_q,
         "udpMaxPayloadSize": 1472,
+        **auth_block,
         # control api (loopback only — admin panel talks to this)
         "api": True,
         "apiAddress": "127.0.0.1:9997",

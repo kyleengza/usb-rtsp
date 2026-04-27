@@ -40,6 +40,12 @@ header h1 { margin: 0; font-size: 1.2rem; letter-spacing: 0.02em; }
 .badge.err { color: var(--err); border-color: var(--err); }
 #agg { color: var(--muted); font-variant-numeric: tabular-nums; }
 
+.auth-bar { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; }
+.auth-user { color: var(--muted); }
+.auth-user::before { content: "🔒  "; }
+.logout-btn { padding: 0.15rem 0.55rem; font-size: 0.78rem; color: var(--muted); }
+.logout-btn:hover { color: var(--err); border-color: var(--err); }
+
 main { padding: 1rem clamp(1rem, 2.5vw, 3rem); margin: 0 auto; max-width: 100%; }
 section { margin: 1.5rem 0; }
 

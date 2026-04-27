@@ -229,6 +229,50 @@ have client isolation enabled.
 sizes they support for YUYV. Switch to MJPG in the panel — it's more reliable
 and lower CPU anyway.
 
+## Authentication (optional)
+
+Default: panel and streams are open on the LAN. Lock them down with:
+
+```sh
+./install.sh --enable-auth
+```
+
+What that does:
+
+1. Installs `python3-pam` if missing.
+2. Drops a small PAM service file at `/etc/pam.d/usb-rtsp-admin` (one-time
+   sudo) that includes `common-auth` + `common-account` — i.e. the
+   panel logs you in against this Pi's user accounts.
+3. Generates a 24-byte URL-safe random password for the stream user
+   (default username `stream`), stored 0600 at
+   `~/.config/usb-rtsp/.stream-pass`.
+4. Writes `~/.config/usb-rtsp/auth.yml` enabling both layers.
+5. Prints the stream credentials at the end.
+
+After that:
+
+| Layer | How you log in |
+|---|---|
+| Panel (`:8080`) | Login page asks for your Pi username + password (PAM). Session cookie lasts 7 days. |
+| RTSP (`:8554`) | URL becomes `rtsp://stream:PASSWORD@host:8554/cam0` |
+| HLS (`:8888`) | Browser pops basic-auth dialog; or `http://stream:PASSWORD@host:8888/cam0/index.m3u8` |
+| WebRTC (`:8889`) | Same — basic-auth dialog or embedded creds |
+
+Loopback is exempt — the local ffmpeg publisher doesn't need creds, and
+`snap` keeps working as-is from the Pi itself.
+
+To turn it back off:
+
+```sh
+./install.sh --disable-auth
+```
+
+This removes `auth.yml` (so the panel + mediamtx revert to open) but
+leaves `/etc/pam.d/usb-rtsp-admin` and the stream password file in
+place; re-running `--enable-auth` reuses them. Manually
+`sudo rm /etc/pam.d/usb-rtsp-admin && rm ~/.config/usb-rtsp/.stream-pass`
+to fully purge.
+
 ## Uninstall
 
 ```sh

@@ -6,3 +6,6 @@ __pycache__/
 /snapshots/
 /tmp/
 .DS_Store
+# secrets — should never live in the repo even by accident
+.cookie-secret
+.stream-pass

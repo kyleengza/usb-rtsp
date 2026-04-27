@@ -576,6 +576,21 @@ async function refreshHost() {
   set("[data-host-temp]", h.cpu_temp_c != null ? `${h.cpu_temp_c} °C` : "—");
 }
 
+async function refreshAuthBar() {
+  try {
+    const r = await fetch("/api/auth/state");
+    const j = await r.json();
+    const bar = $("#auth-bar");
+    if (!bar) return;
+    if (j.panel_enabled && j.authenticated) {
+      bar.hidden = false;
+      $("#auth-user").textContent = `${j.user}`;
+    } else {
+      bar.hidden = true;
+    }
+  } catch {}
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   $$(".card[data-cam]").forEach(wireUpCard);
   wireUpRecovery();
@@ -583,6 +598,7 @@ document.addEventListener("DOMContentLoaded", () => {
   refreshPaths();
   refreshSessions();
   refreshHost();
+  refreshAuthBar();
   setInterval(() => {
     refreshStatus();
     refreshPaths();
