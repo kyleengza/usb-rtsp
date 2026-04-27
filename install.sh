@@ -28,10 +28,14 @@ DISABLE_AUTH=0
 LIST_PLUGINS=0
 declare -a ENABLE_PLUGINS=()
 declare -a DISABLE_PLUGINS=()
+declare -a ADD_PLUGINS=()
+declare -a REMOVE_PLUGINS=()
 NEXT_IS=""
 for arg in "$@"; do
   if [[ "$NEXT_IS" == "enable-plugin" ]]; then ENABLE_PLUGINS+=("$arg"); NEXT_IS=""; continue; fi
   if [[ "$NEXT_IS" == "disable-plugin" ]]; then DISABLE_PLUGINS+=("$arg"); NEXT_IS=""; continue; fi
+  if [[ "$NEXT_IS" == "add-plugin" ]]; then ADD_PLUGINS+=("$arg"); NEXT_IS=""; continue; fi
+  if [[ "$NEXT_IS" == "remove-plugin" ]]; then REMOVE_PLUGINS+=("$arg"); NEXT_IS=""; continue; fi
   case "$arg" in
     --enable-auth)        ENABLE_AUTH=1 ;;
     --disable-auth)       DISABLE_AUTH=1 ;;
@@ -40,6 +44,10 @@ for arg in "$@"; do
     --disable-plugin)     NEXT_IS="disable-plugin" ;;
     --enable-plugin=*)    ENABLE_PLUGINS+=("${arg#*=}") ;;
     --disable-plugin=*)   DISABLE_PLUGINS+=("${arg#*=}") ;;
+    --add-plugin)         NEXT_IS="add-plugin" ;;
+    --remove-plugin)      NEXT_IS="remove-plugin" ;;
+    --add-plugin=*)       ADD_PLUGINS+=("${arg#*=}") ;;
+    --remove-plugin=*)    REMOVE_PLUGINS+=("${arg#*=}") ;;
   esac
 done
 
@@ -59,11 +67,61 @@ enabled = read_enabled_set()
 for p in discover_plugins():
     state = "enabled" if p.name in enabled else "disabled"
     star = "*" if p.default_enabled else " "
-    print(f"  {star} {p.name:12s}  {state:8s}  v{p.version}  {p.description}")
+    src = "bundled" if p.bundled else "user"
+    print(f"  {star} {p.name:12s}  {state:8s}  {src:7s}  v{p.version}  {p.description}")
 print()
 print("(* = default_enabled when no plugins-enabled.yml exists)")
 PYEOF
   exit 0
+fi
+
+# --add-plugin / --remove-plugin are also stand-alone actions
+if (( ${#ADD_PLUGINS[@]} || ${#REMOVE_PLUGINS[@]} )); then
+  python3 - <<PYEOF
+import sys
+sys.path.insert(0, "$REPO_DIR")
+from pathlib import Path
+from core.loader import install_plugin_from_git, install_plugin_from_path, uninstall_plugin
+
+for spec in """${ADD_PLUGINS[*]}""".split():
+    if not spec: continue
+    try:
+        if spec.startswith(("http://", "https://", "git@", "ssh://")):
+            p = install_plugin_from_git(spec)
+        else:
+            p = install_plugin_from_path(Path(spec))
+        print(f"installed plugin: {p.name} ({p.dir})")
+    except Exception as e:
+        print(f"add-plugin {spec!r} failed: {type(e).__name__}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+for name in """${REMOVE_PLUGINS[*]}""".split():
+    if not name: continue
+    try:
+        uninstall_plugin(name)
+        print(f"uninstalled plugin: {name}")
+    except Exception as e:
+        print(f"remove-plugin {name!r} failed: {type(e).__name__}: {e}", file=sys.stderr)
+        sys.exit(1)
+PYEOF
+fi
+
+# Symlink developed-here plugins from plugins-extra/ into the user-dir on
+# first run. Keeps in-tree development convenience without making them
+# bundled. Already-installed (file or symlink present) is left alone.
+EXTRA_DIR="$REPO_DIR/plugins-extra"
+USER_PLUGINS_DIR="$HOME/.local/share/usb-rtsp/plugins"
+if [[ -d "$EXTRA_DIR" ]]; then
+  mkdir -p "$USER_PLUGINS_DIR"
+  for plug_dir in "$EXTRA_DIR"/*; do
+    [[ -d "$plug_dir" ]] || continue
+    plug_name="$(basename "$plug_dir")"
+    target="$USER_PLUGINS_DIR/$plug_name"
+    if [[ ! -e "$target" && ! -L "$target" ]]; then
+      ln -s "$plug_dir" "$target"
+      green "✓ symlinked plugins-extra/$plug_name → $target (dev mode)"
+    fi
+  done
 fi
 
 arch="$(uname -m)"

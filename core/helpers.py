@@ -22,7 +22,8 @@ SNAP_DIR = CONFIG_DIR / "snapshots"
 PLUGINS_ENABLED_FILE = CONFIG_DIR / "plugins-enabled.yml"
 
 REPO_DIR = Path(os.environ.get("USB_RTSP_REPO", Path(__file__).resolve().parent.parent))
-PLUGINS_DIR = REPO_DIR / "plugins"
+PLUGINS_DIR = REPO_DIR / "plugins"          # bundled plugins (ship with usb-rtsp main repo)
+USER_PLUGINS_DIR = Path.home() / ".local" / "share" / "usb-rtsp" / "plugins"  # user-installed
 
 MEDIAMTX_API = "http://127.0.0.1:9997"
 
