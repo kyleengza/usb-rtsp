@@ -824,13 +824,16 @@ def login_page(request: Request, next: str = "/", error: str = "") -> HTMLRespon
 async def login_submit(request: Request) -> Response:
     if not auth_lib.panel_enabled():
         return RedirectResponse("/", status_code=303)
-    # Parse form manually — FastAPI's Form(...) annotation triggers a hard
-    # python-multipart import check that fails on Debian (python3-multipart
-    # is the wrong upstream lib). request.form() works fine for urlencoded.
-    form = await request.form()
-    username = (form.get("username") or "").strip()
-    password = form.get("password") or ""
-    next_url = form.get("next") or "/"
+    # Parse the urlencoded body ourselves — FastAPI's Form(...) AND
+    # Starlette's request.form() both trip over the missing python-multipart
+    # library on Debian (python3-multipart is the wrong upstream lib).
+    # urlencoded forms don't actually need multipart parsing.
+    import urllib.parse
+    raw = (await request.body()).decode("utf-8", "replace")
+    data = urllib.parse.parse_qs(raw, keep_blank_values=True)
+    username = (data.get("username", [""])[0] or "").strip()
+    password = data.get("password", [""])[0] or ""
+    next_url = data.get("next", ["/"])[0] or "/"
     cookie_days = auth_lib.load_config()["panel"].get("cookie_max_age_days", 7)
     if not auth_lib.pam_authenticate(username, password):
         return templates.TemplateResponse("login.html", {
