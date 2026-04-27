@@ -266,6 +266,8 @@ def dashboard(request: Request) -> HTMLResponse:
     new_cams = [c for c in detected.get("cameras", []) if c["by_id"] not in configured_ids]
 
     qpresets = load_quality_presets()
+    creds = auth_lib.stream_credentials()
+    stream_user, stream_pass = (creds or (None, None))
     return templates.TemplateResponse("index.html", {
         "request": request,
         "cards": cards,
@@ -274,6 +276,9 @@ def dashboard(request: Request) -> HTMLResponse:
         "qualities": list(qpresets.keys()) or ["low", "medium", "high"],
         "x264_presets": ["ultrafast", "superfast", "veryfast", "faster", "fast"],
         "host": request.headers.get("host", "").split(":")[0] or "pitato.local",
+        "stream_user": stream_user,
+        "stream_pass": stream_pass,
+        "stream_auth": bool(creds),
     })
 
 

@@ -311,7 +311,12 @@ function wireUpCard(card) {
     fresh.setAttribute("loading", "lazy");
     fresh.setAttribute("allow", "autoplay");
     fresh.setAttribute("allowfullscreen", "");
-    fresh.src = `http://${location.hostname}:8889/${camName}/?t=${Date.now()}`;
+    // If stream auth is on, embed the credentials so the iframe can
+    // hit mediamtx without a 401 prompt. The panel itself is auth-gated
+    // so this isn't an extra leak.
+    const creds = window.__USB_RTSP_STREAM_CREDS__;
+    const credsAt = creds ? `${encodeURIComponent(creds.user)}:${encodeURIComponent(creds.pass)}@` : "";
+    fresh.src = `http://${credsAt}${location.hostname}:8889/${camName}/?t=${Date.now()}`;
     if (old) old.replaceWith(fresh); else wrap.appendChild(fresh);
     return fresh;
   }
