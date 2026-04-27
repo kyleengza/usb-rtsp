@@ -102,6 +102,25 @@ function escapeHtml(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+async function waitForPathReady(name, timeoutMs = 12000) {
+  // Poll /api/paths every 400ms until the named path is ready (or timeout).
+  // Used after a save+restart to delay reconnecting the iframe until the
+  // publisher is actually producing again.
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const r = await fetch("/api/paths");
+      if (r.ok) {
+        const d = await r.json();
+        const item = (d.items || []).find(p => p.name === name);
+        if (item && (item.ready === true || item.sourceReady === true)) return true;
+      }
+    } catch {}
+    await new Promise(res => setTimeout(res, 400));
+  }
+  return false;
+}
+
 async function copyText(text) {
   // Prefer modern API where allowed (HTTPS or localhost).
   if (navigator.clipboard && window.isSecureContext) {
@@ -224,20 +243,26 @@ function wireUpCard(card) {
       status.classList.add("ok");
       status.textContent = `saved · ${j.reload === "restart" ? "restarting mediamtx…" : `reload: ${j.reload}`}`;
 
-      // If the live preview iframe is open, mediamtx just restarted and the
-      // WebRTC session in the iframe is now dead with no auto-reconnect.
-      // Force a fresh src after a delay long enough for mediamtx + the
-      // runOnInit ffmpeg to be back online (~4 s on a Pi 5).
+      // After mediamtx restart, poll the API until our path goes ready
+      // (mediamtx is up + the runOnInit ffmpeg has connected). Then reload
+      // the iframe — WebRTC negotiation needs a live publisher behind it.
+      // Without this, the iframe reconnects too early and shows a blank
+      // player until the user manually refreshes.
       const wrap = $(".preview", card);
       const iframe = $("[data-preview-frame]", card);
-      if (j.reload === "restart" && wrap && !wrap.hidden && iframe) {
-        const url = `http://${location.hostname}:8889/${name}/`;
-        iframe.src = "about:blank";
-        setTimeout(() => {
-          iframe.src = url + "?t=" + Date.now();
-          status.textContent = "saved · preview reconnected";
-          setTimeout(() => { status.textContent = ""; status.className = "form-status"; }, 1500);
-        }, 4500);
+      if (j.reload === "restart") {
+        if (wrap && !wrap.hidden && iframe) iframe.src = "about:blank";
+        const ready = await waitForPathReady(name, 12000);
+        if (ready) {
+          status.textContent = "saved · stream ready";
+          if (wrap && !wrap.hidden && iframe) {
+            iframe.src = `http://${location.hostname}:8889/${name}/?t=${Date.now()}`;
+          }
+        } else {
+          status.classList.add("err");
+          status.textContent = "saved, but stream didn't come back in 12s — check logs";
+        }
+        setTimeout(() => { status.textContent = ""; status.className = "form-status"; }, 2500);
       } else {
         setTimeout(() => { status.textContent = ""; status.className = "form-status"; }, 3000);
       }
