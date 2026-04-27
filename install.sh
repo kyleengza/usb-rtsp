@@ -106,23 +106,12 @@ for name in """${REMOVE_PLUGINS[*]}""".split():
 PYEOF
 fi
 
-# Symlink developed-here plugins from plugins-extra/ into the user-dir on
-# first run. Keeps in-tree development convenience without making them
-# bundled. Already-installed (file or symlink present) is left alone.
-EXTRA_DIR="$REPO_DIR/plugins-extra"
-USER_PLUGINS_DIR="$HOME/.local/share/usb-rtsp/plugins"
-if [[ -d "$EXTRA_DIR" ]]; then
-  mkdir -p "$USER_PLUGINS_DIR"
-  for plug_dir in "$EXTRA_DIR"/*; do
-    [[ -d "$plug_dir" ]] || continue
-    plug_name="$(basename "$plug_dir")"
-    target="$USER_PLUGINS_DIR/$plug_name"
-    if [[ ! -e "$target" && ! -L "$target" ]]; then
-      ln -s "$plug_dir" "$target"
-      green "✓ symlinked plugins-extra/$plug_name → $target (dev mode)"
-    fi
-  done
-fi
+# Make sure the user-plugins dir exists — the panel's "Add plugin" and
+# `--add-plugin` both clone/copy into it. The optional relay + inference
+# plugins live in their own repos (kyleengza/usb-rtsp-plugin-relay,
+# kyleengza/usb-rtsp-plugin-inference); install them via the panel or
+# `./install.sh --add-plugin <git-url>`.
+mkdir -p "$HOME/.local/share/usb-rtsp/plugins"
 
 arch="$(uname -m)"
 [[ "$arch" == "aarch64" ]] || die "this installer targets aarch64; got $arch (extend if needed)"

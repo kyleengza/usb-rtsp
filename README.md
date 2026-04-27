@@ -31,6 +31,13 @@ The installer asks for sudo once to (a) `apt install` any missing dependencies
 user-linger so the services survive reboot. Everything else lives in
 `~/.config/`.
 
+**Recommended companion installer for Raspberry Pi 5 + AI HAT+ + UPS HAT:**
+[pi-bringup](https://github.com/kyleengza/pi-bringup) brings up the Hailo
+driver, UPS watchdog, and journald persistence. usb-rtsp's hardware-presence
+cards (Hailo, UPS, throttle) populate richest when pi-bringup is installed
+first, but they degrade gracefully on a bare image — install order is
+pi-bringup → reboot → usb-rtsp.
+
 The installer is idempotent — re-run after `git pull`, after editing
 `etc/profiles.yml`, or any time you want to re-render `mediamtx.yml` from
 `~/.config/usb-rtsp/cameras.yml`. It leaves your `cameras.yml` untouched
@@ -255,29 +262,66 @@ The same actions surface in the panel at `Settings → Plugins`:
 Bundled plugins can never be uninstalled via the panel or API
 (`POST /api/plugins/uninstall/usb` returns 422).
 
+### Optional plugins
+
+Two first-party plugins live in their own repos so they can be
+installed à la carte:
+
+| Plugin | Repo | What it does |
+|---|---|---|
+| `relay` | [`kyleengza/usb-rtsp-plugin-relay`](https://github.com/kyleengza/usb-rtsp-plugin-relay) | Pull a remote RTSP/RTMP/HTTP stream and re-broadcast it as a local path. Optional re-encode (cross-browser-compatible H.264 baseline). |
+| `inference` | [`kyleengza/usb-rtsp-plugin-inference`](https://github.com/kyleengza/usb-rtsp-plugin-inference) | Receive detections + annotated streams from an external inference project. |
+
+Install via the panel (Settings → Plugins → **Add plugin ▾**) or CLI:
+
+```sh
+./install.sh --add-plugin git@github.com:kyleengza/usb-rtsp-plugin-relay.git
+./install.sh --add-plugin git@github.com:kyleengza/usb-rtsp-plugin-inference.git
+# (or the https://github.com/... form if no SSH key on the box)
+./install.sh --enable-plugin relay
+./install.sh --enable-plugin inference
+```
+
+After enabling, restart the admin (`systemctl --user restart usb-rtsp-admin`)
+or wait — the install endpoint schedules one automatically. The plugin's
+section appears in the dashboard's left pane and its config form lives at
+`/settings#plugin-<name>`.
+
 ### Developing a plugin
 
-The two non-default plugins (relay, inference) live in this repo at
-`plugins-extra/<name>/` for development convenience. `install.sh`
-symlinks them into `~/.local/share/usb-rtsp/plugins/` on first run, so
-edits in the repo are live and the loader still treats them as
-user-installed (so they're uninstallable). To ship a plugin
-independently later, move the directory to its own git repo and have
-users `--add-plugin <url>` it instead.
+Clone the plugin repo somewhere convenient and either:
 
-The plugin contract is one Python package with up to four entry-points:
+- **Symlink for live edits** (the loader picks up changes after an admin
+  restart):
+  ```sh
+  git clone git@github.com:kyleengza/usb-rtsp-plugin-relay.git ~/dev/relay
+  ln -s ~/dev/relay ~/.local/share/usb-rtsp/plugins/relay
+  systemctl --user restart usb-rtsp-admin
+  ```
+- **Snapshot install** (copies into the user-plugins dir; doesn't pick up
+  later edits):
+  ```sh
+  ./install.sh --add-plugin ~/dev/relay
+  ```
+
+The plugin contract is one Python package with up to five entry-points:
 
 ```
-plugins-extra/<name>/
-├── manifest.yml              name, description, version, default_enabled
+<plugin-repo-root>/
+├── manifest.yml              name, description, version, default_enabled, order
 ├── __init__.py               register(app, ctx),
 │                              section_context(ctx, request) -> dict,
 │                              list_inputs(ctx) -> [{name, enabled, label}]
 ├── render.py                 render_paths(ctx) -> {path: mediamtx-cfg}
 ├── api.py                    FastAPI APIRouter (mounted at /api/<name>/...)
 ├── templates/section.html    Jinja partial included on the dashboard
+├── templates/settings.html   Jinja partial included in /settings (optional)
 └── static/<name>.js          per-plugin JS, served at /static/<name>/
 ```
+
+The loader puts the main `usb-rtsp` repo on `sys.path` before importing
+the plugin, so `from core.helpers import …` resolves regardless of where
+the plugin lives on disk.
 
 ## Authentication (optional)
 
