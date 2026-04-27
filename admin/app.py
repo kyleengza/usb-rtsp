@@ -332,6 +332,74 @@ def api_plugins() -> JSONResponse:
     return JSONResponse({"items": items})
 
 
+def _set_plugin_enabled(name: str, enable: bool) -> dict:
+    """Mutate plugins-enabled.yml + re-render mediamtx + restart usb-rtsp.
+    The admin process needs its own restart for routes/templates to load —
+    we schedule that out-of-band so this response makes it back to the
+    client first."""
+    known = {p.name for p in plugin_loader.discover_plugins()}
+    if name not in known:
+        raise HTTPException(404, f"unknown plugin: {name}")
+    enabled = plugin_loader.read_enabled_set()
+    if enable:
+        enabled.add(name)
+    else:
+        enabled.discard(name)
+    plugin_loader.write_enabled_set(enabled)
+
+    # Re-render mediamtx config + restart so paths reflect the new set.
+    render_p = subprocess.run(
+        ["python3", "-m", "core.renderer"],
+        cwd=str(REPO_DIR),
+        capture_output=True, text=True, timeout=15,
+    )
+    if render_p.returncode != 0:
+        raise HTTPException(500, f"render failed: {(render_p.stdout + render_p.stderr).strip()}")
+    code, _ = systemctl("restart", "usb-rtsp")
+
+    # The admin process needs to restart to (un)load the plugin's APIRouter
+    # + templates + static. Schedule it via Popen so this response returns
+    # before systemd kills us.
+    subprocess.Popen(
+        ["systemctl", "--user", "restart", "usb-rtsp-admin"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    return {
+        "name": name,
+        "enabled": enable,
+        "reload": "restart" if code == 0 else "failed",
+        "admin_restart": True,
+    }
+
+
+@app.post("/api/plugins/{name}/enable")
+def api_plugin_enable(name: str) -> JSONResponse:
+    return JSONResponse(_set_plugin_enabled(name, True))
+
+
+@app.post("/api/plugins/{name}/disable")
+def api_plugin_disable(name: str) -> JSONResponse:
+    return JSONResponse(_set_plugin_enabled(name, False))
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request) -> HTMLResponse:
+    enabled = plugin_loader.read_enabled_set()
+    plugins = []
+    for p in plugin_loader.discover_plugins():
+        plugins.append({
+            "name": p.name,
+            "description": p.description,
+            "version": p.version,
+            "default_enabled": p.default_enabled,
+            "enabled": p.name in enabled,
+        })
+    return templates.TemplateResponse("settings.html", {
+        "request": request,
+        "plugins_meta": plugins,
+    })
+
+
 # ─── host info ──────────────────────────────────────────────────────────────
 
 @app.get("/api/host")

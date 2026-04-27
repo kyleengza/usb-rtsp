@@ -10,6 +10,10 @@
 
 <header>
   <h1>usb-rtsp</h1>
+  <nav class="nav-links">
+    <a href="/" class="active">Dashboard</a>
+    <a href="/settings">Settings</a>
+  </nav>
   <div class="status-bar">
     <span class="badge" id="svc-mediamtx">mediamtx —</span>
     <span class="badge" id="svc-admin">admin —</span>
@@ -89,62 +93,6 @@
       <div class="host-sub">thermal zone 0</div>
     </div>
   </div>
-</section>
-
-<section class="recovery">
-  <h2>Service recovery</h2>
-
-  <div class="svc-grid">
-    <div class="svc-row" data-svc-row="usb-rtsp">
-      <div class="svc-name">usb-rtsp <span class="svc-sub">(mediamtx)</span></div>
-      <span class="svc-state badge" data-svc-state>—</span>
-      <span class="svc-uptime" data-svc-uptime>—</span>
-      <span class="svc-pid" data-svc-pid>pid —</span>
-      <div class="svc-actions">
-        <button data-svc-act="start">Start</button>
-        <button data-svc-act="stop">Stop</button>
-        <button data-svc-act="restart">Restart</button>
-      </div>
-    </div>
-    <div class="svc-row" data-svc-row="usb-rtsp-admin">
-      <div class="svc-name">usb-rtsp-admin <span class="svc-sub">(this panel)</span></div>
-      <span class="svc-state badge" data-svc-state>—</span>
-      <span class="svc-uptime" data-svc-uptime>—</span>
-      <span class="svc-pid" data-svc-pid>pid —</span>
-      <div class="svc-actions">
-        <button data-svc-act="start">Start</button>
-        <button data-svc-act="stop">Stop</button>
-        <button data-svc-act="restart" class="danger">Restart</button>
-      </div>
-    </div>
-  </div>
-
-  <details class="snapshots-block">
-    <summary>Snapshots <span class="snapshots-summary" data-snapshots-summary>(loading…)</span></summary>
-    <div class="log-controls">
-      <label>Delete older than <input type="number" id="snap-days" value="7" min="0" max="365" step="1"> days</label>
-      <button data-act="snap-cleanup">Run cleanup</button>
-      <button data-act="snap-refresh">Refresh</button>
-    </div>
-    <ul id="snap-list" class="snap-list"></ul>
-  </details>
-
-  <details class="logs-block" open>
-    <summary>Service logs</summary>
-    <div class="log-controls">
-      <label>Unit
-        <select id="log-unit">
-          <option value="usb-rtsp" selected>usb-rtsp (mediamtx)</option>
-          <option value="usb-rtsp-admin">usb-rtsp-admin (panel)</option>
-        </select>
-      </label>
-      <label>Lines <input type="number" id="log-lines" value="100" min="10" max="500" step="10"></label>
-      <button data-act="refresh-logs">Refresh</button>
-      <label class="tail-toggle"><input type="checkbox" id="log-tail"> Live tail (2 s)</label>
-      <span id="log-status" class="log-status"></span>
-    </div>
-    <pre id="logs">— click Refresh, or tick Live tail —</pre>
-  </details>
 </section>
 
 </main>
