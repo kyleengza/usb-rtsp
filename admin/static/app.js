@@ -341,6 +341,17 @@ function wireUpCard(card) {
     }
   });
 
+  // settings toggle (matches the live-preview pattern; collapsed by default)
+  $("[data-act=settings]", card)?.addEventListener("click", () => {
+    const btn = $("[data-act=settings]", card);
+    const wrap = $(".settings-wrap", card);
+    if (!wrap) return;
+    const isOpen = !wrap.hidden;
+    wrap.hidden = isOpen;
+    btn.classList.toggle("open", !isOpen);
+    btn.textContent = isOpen ? "Settings ▾" : "Hide settings ▴";
+  });
+
   // manual preview reconnect (backstop for cases where the post-save
   // auto-reconnect doesn't grab the new stream)
   $("[data-act=preview-reconnect]", card)?.addEventListener("click", () => {
@@ -527,15 +538,55 @@ function wireUpRecovery() {
 
 // ─── boot ───────────────────────────────────────────────────────────────────
 
+async function refreshHost() {
+  let h;
+  try { h = await fetch("/api/host").then(r => r.json()); } catch { return; }
+
+  const set = (sel, val) => { const el = $(sel); if (el) el.textContent = val; };
+  const setBar = (sel, pct) => {
+    const el = $(sel); if (!el) return;
+    el.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+    el.classList.remove("warn", "err");
+    if (pct >= 90) el.classList.add("err");
+    else if (pct >= 75) el.classList.add("warn");
+  };
+
+  set("[data-host-model]", h.model || "—");
+  set("[data-host-host]", h.hostname || "—");
+  set("[data-host-kernel]", h.kernel || "—");
+  set("[data-host-uptime]", `up ${h.uptime_h || "—"}`);
+  set("[data-host-ip]", h.lan_ip || "—");
+  set("[data-host-mediamtx]", h.mediamtx_version || "—");
+  set("[data-host-cpu]", `${h.cpu_count || 0} cores`);
+  if (h.loadavg) {
+    set("[data-host-load]", `${h.loadavg[0].toFixed(2)} / ${h.loadavg[1].toFixed(2)} / ${h.loadavg[2].toFixed(2)}`);
+  }
+  if (h.mem && h.mem.total_h) {
+    set("[data-host-mem]", `${h.mem.used_h} / ${h.mem.total_h} (${h.mem.used_pct}%)`);
+    setBar("[data-host-mem-bar]", h.mem.used_pct || 0);
+  }
+  if (h.disk_root) {
+    set("[data-host-disk-root]", `${h.disk_root.used_h} / ${h.disk_root.total_h} (${h.disk_root.used_pct}%)`);
+    setBar("[data-host-disk-root-bar]", h.disk_root.used_pct || 0);
+  }
+  if (h.disk_config) {
+    set("[data-host-disk-config]", `${h.disk_config.used_h} / ${h.disk_config.total_h} (${h.disk_config.used_pct}%)`);
+    setBar("[data-host-disk-config-bar]", h.disk_config.used_pct || 0);
+  }
+  set("[data-host-temp]", h.cpu_temp_c != null ? `${h.cpu_temp_c} °C` : "—");
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   $$(".card[data-cam]").forEach(wireUpCard);
   wireUpRecovery();
   refreshStatus();
   refreshPaths();
   refreshSessions();
+  refreshHost();
   setInterval(() => {
     refreshStatus();
     refreshPaths();
     refreshSessions();
   }, POLL_MS);
+  setInterval(refreshHost, 10000);
 });

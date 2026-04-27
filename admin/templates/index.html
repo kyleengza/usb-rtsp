@@ -31,7 +31,10 @@
     <header>
       <h3>{{ cam.name }}</h3>
       <span class="ready-dot" data-ready></span>
-      <button type="button" class="preview-toggle" data-act="preview">Live preview ▾</button>
+      <div class="card-tabs">
+        <button type="button" class="card-tab" data-act="preview">Live preview ▾</button>
+        <button type="button" class="card-tab" data-act="settings">Settings ▾</button>
+      </div>
     </header>
     <div class="preview" hidden>
       <div class="preview-controls">
@@ -69,6 +72,7 @@
       · <span data-uptime>—</span>
     </div>
 
+    <div class="settings-wrap" hidden>
     <form class="settings" data-cam-form="{{ cam.name }}">
       <input type="hidden" name="by_id" value="{{ cam.by_id }}">
 
@@ -175,6 +179,7 @@
       </div>
       <div class="form-status" data-form-status></div>
     </form>
+    </div>
 
     <img class="snap-preview" hidden alt="">
 
@@ -212,6 +217,52 @@
   <p>Click <strong>Rescan cameras</strong> below to add them.</p>
 </section>
 {% endif %}
+
+<section class="host">
+  <h2>Host</h2>
+  <div class="host-grid">
+    <div class="host-tile" data-host-tile="model">
+      <div class="host-label">Model</div>
+      <div class="host-value" data-host-model>—</div>
+      <div class="host-sub" data-host-host>—</div>
+    </div>
+    <div class="host-tile">
+      <div class="host-label">Kernel / arch</div>
+      <div class="host-value mono" data-host-kernel>—</div>
+      <div class="host-sub" data-host-uptime>up —</div>
+    </div>
+    <div class="host-tile">
+      <div class="host-label">LAN IP</div>
+      <div class="host-value mono" data-host-ip>—</div>
+      <div class="host-sub" data-host-mediamtx>mediamtx —</div>
+    </div>
+    <div class="host-tile">
+      <div class="host-label">CPU load</div>
+      <div class="host-value mono" data-host-load>—</div>
+      <div class="host-sub" data-host-cpu>— cores</div>
+    </div>
+    <div class="host-tile">
+      <div class="host-label">Memory</div>
+      <div class="host-value mono" data-host-mem>—</div>
+      <div class="host-bar"><div class="host-bar-fill" data-host-mem-bar></div></div>
+    </div>
+    <div class="host-tile">
+      <div class="host-label">Disk /</div>
+      <div class="host-value mono" data-host-disk-root>—</div>
+      <div class="host-bar"><div class="host-bar-fill" data-host-disk-root-bar></div></div>
+    </div>
+    <div class="host-tile">
+      <div class="host-label">Disk ~/.config</div>
+      <div class="host-value mono" data-host-disk-config>—</div>
+      <div class="host-bar"><div class="host-bar-fill" data-host-disk-config-bar></div></div>
+    </div>
+    <div class="host-tile">
+      <div class="host-label">CPU temp</div>
+      <div class="host-value mono" data-host-temp>—</div>
+      <div class="host-sub">thermal zone 0</div>
+    </div>
+  </div>
+</section>
 
 <section class="streams">
   <h2>Active streams</h2>

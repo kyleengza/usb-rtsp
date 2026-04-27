@@ -580,6 +580,135 @@ def api_svc_status(unit: str) -> JSONResponse:
     })
 
 
+@app.get("/api/host")
+def api_host() -> JSONResponse:
+    """Lightweight host info for the dashboard. /proc + a couple of cheap shellouts."""
+    info: dict = {}
+
+    # hostname + Pi-ish model
+    try:
+        info["hostname"] = subprocess.run(
+            ["hostname"], capture_output=True, text=True, timeout=2,
+        ).stdout.strip()
+    except OSError:
+        info["hostname"] = "—"
+    try:
+        with open("/proc/device-tree/model") as f:
+            info["model"] = f.read().rstrip("\x00").strip()
+    except OSError:
+        info["model"] = "—"
+
+    # kernel + arch
+    try:
+        u = subprocess.run(["uname", "-srm"], capture_output=True, text=True, timeout=2)
+        info["kernel"] = u.stdout.strip()
+    except OSError:
+        info["kernel"] = "—"
+
+    # CPU count + load avg
+    try:
+        with open("/proc/cpuinfo") as f:
+            info["cpu_count"] = sum(1 for line in f if line.startswith("processor"))
+    except OSError:
+        info["cpu_count"] = 0
+    try:
+        with open("/proc/loadavg") as f:
+            parts = f.read().split()
+            info["loadavg"] = [float(parts[0]), float(parts[1]), float(parts[2])]
+    except (OSError, ValueError, IndexError):
+        info["loadavg"] = [0.0, 0.0, 0.0]
+
+    # memory
+    try:
+        meminfo: dict[str, int] = {}
+        with open("/proc/meminfo") as f:
+            for line in f:
+                k, _, rest = line.partition(":")
+                meminfo[k.strip()] = int(rest.strip().split()[0]) * 1024  # kB → bytes
+        total = meminfo.get("MemTotal", 0)
+        avail = meminfo.get("MemAvailable", 0)
+        used = max(0, total - avail)
+        info["mem"] = {
+            "total": total, "total_h": fmt_bytes(total),
+            "used": used, "used_h": fmt_bytes(used),
+            "avail": avail, "avail_h": fmt_bytes(avail),
+            "used_pct": round(100 * used / total, 1) if total else 0,
+        }
+    except (OSError, ValueError):
+        info["mem"] = {}
+
+    # uptime
+    try:
+        with open("/proc/uptime") as f:
+            up = float(f.read().split()[0])
+        info["uptime_s"] = up
+        info["uptime_h"] = fmt_duration(up)
+    except (OSError, ValueError):
+        info["uptime_s"] = 0
+        info["uptime_h"] = "—"
+
+    # disk: / and the config dir's filesystem
+    def _df(path: Path) -> dict:
+        try:
+            stat = os.statvfs(path)
+            total = stat.f_blocks * stat.f_frsize
+            free = stat.f_bavail * stat.f_frsize
+            used = total - free
+            return {
+                "path": str(path),
+                "total": total, "total_h": fmt_bytes(total),
+                "used": used, "used_h": fmt_bytes(used),
+                "free": free, "free_h": fmt_bytes(free),
+                "used_pct": round(100 * used / total, 1) if total else 0,
+            }
+        except OSError:
+            return {"path": str(path), "total_h": "—", "used_h": "—", "free_h": "—", "used_pct": 0}
+
+    info["disk_root"] = _df(Path("/"))
+    info["disk_config"] = _df(CONFIG_DIR if CONFIG_DIR.exists() else Path.home())
+
+    # CPU temp (Linux thermal zone — Pi 5 reports here too)
+    info["cpu_temp_c"] = None
+    for zone in sorted(Path("/sys/class/thermal").glob("thermal_zone*")):
+        try:
+            tname = (zone / "type").read_text().strip()
+            if "cpu" in tname.lower() or "soc" in tname.lower() or zone.name == "thermal_zone0":
+                raw = int((zone / "temp").read_text().strip())
+                info["cpu_temp_c"] = round(raw / 1000.0, 1)
+                break
+        except (OSError, ValueError):
+            continue
+
+    # mediamtx version (cheap shellout, ~10ms)
+    info["mediamtx_version"] = "—"
+    try:
+        v = subprocess.run(
+            ["/usr/local/bin/mediamtx", "--version"],
+            capture_output=True, text=True, timeout=2,
+        )
+        info["mediamtx_version"] = (v.stdout + v.stderr).strip().splitlines()[0]
+    except (OSError, IndexError):
+        pass
+
+    # local LAN IP (best-effort; whatever default route uses)
+    info["lan_ip"] = "—"
+    try:
+        r = subprocess.run(
+            ["ip", "-4", "-o", "route", "get", "1.1.1.1"],
+            capture_output=True, text=True, timeout=2,
+        )
+        # output: "1.1.1.1 via 192.168.x.1 dev wlan0 src 192.168.x.x ..."
+        for tok in r.stdout.split():
+            if tok == "src":
+                idx = r.stdout.split().index("src") + 1
+                info["lan_ip"] = r.stdout.split()[idx]
+                break
+    except (OSError, ValueError, IndexError):
+        pass
+
+    return JSONResponse(info)
+
+
 @app.get("/api/snapshots")
 def api_snapshots() -> JSONResponse:
     """List snapshot files + total size (snapshot dir hygiene)."""
