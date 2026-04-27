@@ -222,8 +222,25 @@ function wireUpCard(card) {
       const j = await r.json();
       if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
       status.classList.add("ok");
-      status.textContent = `saved · reload: ${j.reload}`;
-      setTimeout(() => { status.textContent = ""; status.className = "form-status"; }, 3000);
+      status.textContent = `saved · ${j.reload === "restart" ? "restarting mediamtx…" : `reload: ${j.reload}`}`;
+
+      // If the live preview iframe is open, mediamtx just restarted and the
+      // WebRTC session in the iframe is now dead with no auto-reconnect.
+      // Force a fresh src after a delay long enough for mediamtx + the
+      // runOnInit ffmpeg to be back online (~4 s on a Pi 5).
+      const wrap = $(".preview", card);
+      const iframe = $("[data-preview-frame]", card);
+      if (j.reload === "restart" && wrap && !wrap.hidden && iframe) {
+        const url = `http://${location.hostname}:8889/${name}/`;
+        iframe.src = "about:blank";
+        setTimeout(() => {
+          iframe.src = url + "?t=" + Date.now();
+          status.textContent = "saved · preview reconnected";
+          setTimeout(() => { status.textContent = ""; status.className = "form-status"; }, 1500);
+        }, 4500);
+      } else {
+        setTimeout(() => { status.textContent = ""; status.className = "form-status"; }, 3000);
+      }
     } catch (err) {
       status.classList.add("err");
       status.textContent = `error: ${err.message}`;
