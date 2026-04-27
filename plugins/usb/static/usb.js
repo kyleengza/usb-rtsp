@@ -137,7 +137,7 @@
     }
 
     // Live-preview tab
-    $("[data-act=preview]", card)?.addEventListener("click", () => {
+    $("[data-act=preview]", card)?.addEventListener("click", async () => {
       const btn = $("[data-act=preview]", card);
       const wrap = $(".preview", card);
       const iframe = $("[data-preview-frame]", card);
@@ -150,10 +150,10 @@
         btn.classList.remove("open");
         btn.textContent = "Live preview ▾";
       } else {
-        await rebuildPreviewIframe(card, card.dataset.cam);
         wrap.hidden = false;
         btn.classList.add("open");
         btn.textContent = "Hide preview ▴";
+        await rebuildPreviewIframe(card, card.dataset.cam);
       }
     });
 
