@@ -151,7 +151,7 @@ sys.path.insert(0, "$REPO_DIR")
 from core.loader import discover_plugins, read_enabled_set, write_enabled_set
 known = {p.name for p in discover_plugins()}
 enabled = read_enabled_set()
-for name in ${ENABLE_PLUGINS[@]@Q}.split() if False else """${ENABLE_PLUGINS[*]}""".split():
+for name in """${ENABLE_PLUGINS[*]}""".split():
     if not name: continue
     if name not in known:
         print(f"warning: --enable-plugin {name!r}: not found in plugins/", file=sys.stderr)
