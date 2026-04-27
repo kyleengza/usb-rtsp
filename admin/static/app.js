@@ -73,14 +73,16 @@ async function refreshSessions() {
   const tbody = $("#sessions-tbody");
   const items = data.items || [];
   if (!items.length) {
-    tbody.innerHTML = '<tr class="empty"><td colspan="6">no active sessions</td></tr>';
+    tbody.innerHTML = '<tr class="empty"><td colspan="8">no active viewers</td></tr>';
     return;
   }
   tbody.innerHTML = items.map(s => `
     <tr>
+      <td><span class="proto proto-${escapeHtml((s.protocol || '').toLowerCase())}">${escapeHtml(s.protocol || "—")}</span></td>
       <td>${escapeHtml(s.path || "—")}</td>
       <td class="peer">${escapeHtml(s.remoteAddr || "—")}</td>
       <td>${escapeHtml(s.state || "—")}</td>
+      <td>${escapeHtml(s.transport || "—")}</td>
       <td class="bytes">${escapeHtml(s.bytesSent_h || "—")}</td>
       <td class="bytes">${escapeHtml(s.bytesReceived_h || "—")}</td>
       <td class="dur">${escapeHtml(s.duration_h || "—")}</td>

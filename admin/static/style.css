@@ -180,6 +180,10 @@ button.danger:hover { background: var(--err); color: white; }
   font-family: ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
 }
+.proto { display: inline-block; padding: 0.05rem 0.45rem; border-radius: 999px; font-size: 0.72rem; font-weight: 500; border: 1px solid var(--border); }
+.proto-rtsp   { color: var(--accent); border-color: var(--accent); }
+.proto-hls    { color: var(--warn); border-color: var(--warn); }
+.proto-webrtc { color: var(--ok); border-color: var(--ok); }
 
 .recovery-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
 .recovery details { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.8rem; }

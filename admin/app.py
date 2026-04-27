@@ -264,25 +264,74 @@ def api_paths() -> JSONResponse:
     return JSONResponse(data)
 
 
+def _duration_h(created: str | None, now: datetime) -> str:
+    try:
+        if not created:
+            return "—"
+        t = datetime.fromisoformat(created.replace("Z", "+00:00"))
+        return fmt_duration((now - t).total_seconds())
+    except (ValueError, TypeError):
+        return "—"
+
+
 @app.get("/api/sessions")
 def api_sessions() -> JSONResponse:
-    data = _api_get("/v3/rtspsessions/list")
-    if data is None:
-        raise HTTPException(503, "mediamtx api unreachable")
+    """Merged view of every active stream consumer across RTSP, WebRTC, HLS.
+
+    The producer side (our ffmpeg pushing into mediamtx on 127.0.0.1) is
+    intentionally filtered out — users only care about who's *watching*.
+    """
     now = datetime.now(timezone.utc)
-    for s in data.get("items", []):
-        s["bytesSent_h"] = fmt_bytes(s.get("bytesSent"))
-        s["bytesReceived_h"] = fmt_bytes(s.get("bytesReceived"))
-        # duration from `created` ISO field if present
-        created = s.get("created")
-        try:
-            if created:
-                t = datetime.fromisoformat(created.replace("Z", "+00:00"))
-                s["duration_s"] = (now - t).total_seconds()
-                s["duration_h"] = fmt_duration(s["duration_s"])
-        except (ValueError, TypeError):
-            s["duration_h"] = "—"
-    return JSONResponse(data)
+    items: list[dict] = []
+
+    # RTSP — readers only (skip our own publishers on loopback)
+    rtsp = _api_get("/v3/rtspsessions/list") or {"items": []}
+    for s in rtsp.get("items", []):
+        if s.get("state") == "publish":
+            continue
+        if (s.get("remoteAddr") or "").startswith("127."):
+            continue
+        items.append({
+            "protocol": "RTSP",
+            "path": s.get("path") or "—",
+            "remoteAddr": s.get("remoteAddr") or "—",
+            "state": s.get("state") or "—",
+            "transport": s.get("transport") or "—",
+            "bytesSent_h": fmt_bytes(s.get("bytesSent")),
+            "bytesReceived_h": fmt_bytes(s.get("bytesReceived")),
+            "duration_h": _duration_h(s.get("created"), now),
+        })
+
+    # WebRTC — every session is a reader
+    webrtc = _api_get("/v3/webrtcsessions/list") or {"items": []}
+    for s in webrtc.get("items", []):
+        items.append({
+            "protocol": "WebRTC",
+            "path": s.get("path") or "—",
+            "remoteAddr": s.get("remoteAddr") or "—",
+            "state": s.get("state") or "—",
+            "transport": "UDP/ICE",
+            "bytesSent_h": fmt_bytes(s.get("bytesSent")),
+            "bytesReceived_h": fmt_bytes(s.get("bytesReceived")),
+            "duration_h": _duration_h(s.get("created"), now),
+        })
+
+    # HLS — mediamtx tracks per-path muxers (not per-viewer; HLS is HTTP polling).
+    # We surface one row per active muxer with cumulative bytes sent.
+    hls = _api_get("/v3/hlsmuxers/list") or {"items": []}
+    for m in hls.get("items", []):
+        items.append({
+            "protocol": "HLS",
+            "path": m.get("path") or "—",
+            "remoteAddr": "(HTTP poll)",
+            "state": "muxer active",
+            "transport": "TCP/HTTP",
+            "bytesSent_h": fmt_bytes(m.get("bytesSent")),
+            "bytesReceived_h": "—",
+            "duration_h": _duration_h(m.get("created"), now),
+        })
+
+    return JSONResponse({"itemCount": len(items), "items": items})
 
 
 @app.get("/api/logs")
