@@ -1,0 +1,67 @@
+<section class="relays" data-plugin="relay">
+  <h2>Relays</h2>
+  {% set creds_at = (stream_user ~ ':' ~ stream_pass ~ '@') if stream_auth else '' %}
+
+  {% if not relay_sources %}
+    <p class="empty">No relays configured. Add one below to pull a remote
+    RTSP / RTMP / HTTP stream and re-broadcast it on this server.</p>
+  {% endif %}
+
+  {% for s in relay_sources %}
+  <article class="card" data-relay="{{ s.name }}">
+    <header>
+      <h3>{{ s.name }}</h3>
+      <span class="ready-dot" data-ready></span>
+      <button type="button" class="card-tab" data-act="delete-relay">Remove</button>
+    </header>
+    <ul class="urls">
+      <li>
+        <span class="url-label url-best">WebRTC</span>
+        <code><a href="http://{{ creds_at }}{{ host }}:8889/{{ s.name }}/" target="_blank" rel="noopener">http://{{ creds_at }}{{ host }}:8889/{{ s.name }}/</a></code>
+        <button type="button" class="copy" data-copy="http://{{ creds_at }}{{ host }}:8889/{{ s.name }}/">copy</button>
+      </li>
+      <li>
+        <span class="url-label">HLS</span>
+        <code>http://{{ creds_at }}{{ host }}:8888/{{ s.name }}/index.m3u8</code>
+        <button type="button" class="copy" data-copy="http://{{ creds_at }}{{ host }}:8888/{{ s.name }}/index.m3u8">copy</button>
+      </li>
+      <li>
+        <span class="url-label">RTSP</span>
+        <code>rtsp://{{ creds_at }}{{ host }}:8554/{{ s.name }}</code>
+        <button type="button" class="copy" data-copy="rtsp://{{ creds_at }}{{ host }}:8554/{{ s.name }}">copy</button>
+      </li>
+    </ul>
+    <div class="meta">
+      <div class="device">upstream: <code>{{ s.url }}</code>{% if s.transport %} via {{ s.transport }}{% endif %}</div>
+    </div>
+    <div class="live">
+      <span data-readers>0 viewers</span>
+      · <span data-bytes>—</span> received
+    </div>
+  </article>
+  {% endfor %}
+
+  <details class="advanced">
+    <summary>Add a relay ▾</summary>
+    <form data-relay-add>
+      <label class="adv">Name <input type="text" name="name" required pattern="[a-z][a-z0-9_-]{0,15}" placeholder="e.g. doorbell"></label>
+      <label class="adv">Upstream URL <input type="text" name="url" required placeholder="rtsp://192.168.1.50/cam"></label>
+      <label class="adv">User (optional) <input type="text" name="user"></label>
+      <label class="adv">Password (optional) <input type="password" name="pass"></label>
+      <label class="adv">Transport
+        <select name="transport">
+          <option value="">(auto)</option>
+          <option value="tcp">tcp</option>
+          <option value="udp">udp</option>
+          <option value="udp_multicast">udp_multicast</option>
+        </select>
+      </label>
+      <div class="actions">
+        <button type="submit">Add &amp; reload</button>
+      </div>
+      <div class="form-status" data-relay-status></div>
+    </form>
+  </details>
+</section>
+
+<script src="/static/relay/relay.js"></script>

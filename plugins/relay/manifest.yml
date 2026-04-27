@@ -1,0 +1,4 @@
+name: relay
+description: Re-broadcast remote RTSP streams as local paths
+version: 0.1.0
+default_enabled: false
