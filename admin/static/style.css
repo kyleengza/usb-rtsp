@@ -147,6 +147,16 @@ button.danger:hover { background: var(--err); color: white; }
   border-radius: 4px;
 }
 
+.advanced { grid-column: 1 / -1; margin: 0.3rem 0 0.2rem; background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem 0.7rem; }
+.advanced summary { cursor: pointer; color: var(--muted); font-size: 0.82rem; padding: 0.2rem 0; }
+.advanced summary:hover { color: var(--accent); }
+.advanced-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.5rem 0.7rem; padding: 0.5rem 0; align-items: end; }
+.advanced-grid .adv { display: flex; flex-direction: column; font-size: 0.78rem; color: var(--muted); }
+.advanced-grid input,
+.advanced-grid select { background: #0a0d12; color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.4rem; font: inherit; }
+.advanced-grid small { color: var(--muted); font-size: 0.7rem; margin-top: 0.15rem; }
+.adv-mjpeg.hidden { display: none; }
+
 .native-modes { margin-top: 0.6rem; font-size: 0.8rem; }
 .native-modes summary { cursor: pointer; color: var(--muted); padding: 0.2rem 0; }
 .native-modes summary:hover { color: var(--accent); }

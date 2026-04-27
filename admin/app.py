@@ -34,12 +34,15 @@ DETECT_BIN = REPO_DIR / "bin" / "usb-rtsp-detect"
 RENDER_BIN = REPO_DIR / "bin" / "usb-rtsp-render"
 SNAP_BIN = REPO_DIR / "bin" / "snap"
 PROFILES_YML = REPO_DIR / "etc" / "profiles.yml"
+QUALITY_PRESETS_YML = REPO_DIR / "etc" / "quality-presets.yml"
 
 MEDIAMTX_API = "http://127.0.0.1:9997"
 ALLOWED_UNITS = {"usb-rtsp", "usb-rtsp-admin"}
 CAM_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,15}$")
 ALLOWED_FORMATS = {"MJPG", "YUYV", "H264"}
 ALLOWED_ENCODES = {"h264", "mjpeg", "copy"}
+ALLOWED_X264_PRESETS = {"ultrafast", "superfast", "veryfast", "faster", "fast"}
+ALLOWED_BFRAMES = {0, 1, 2, 3}
 
 app = FastAPI(title="usb-rtsp admin")
 templates = Jinja2Templates(directory=str(REPO_DIR / "admin" / "templates"))
@@ -114,6 +117,12 @@ def save_cameras(doc: dict) -> None:
 
 def load_profiles() -> dict:
     return yaml.safe_load(PROFILES_YML.read_text()) or {}
+
+
+def load_quality_presets() -> dict:
+    if not QUALITY_PRESETS_YML.exists():
+        return {}
+    return yaml.safe_load(QUALITY_PRESETS_YML.read_text()) or {}
 
 
 def detect_cameras() -> dict:
@@ -197,11 +206,14 @@ def dashboard(request: Request) -> HTMLResponse:
     configured_ids = {c["by_id"] for c in cams_doc.get("cameras", [])}
     new_cams = [c for c in detected.get("cameras", []) if c["by_id"] not in configured_ids]
 
+    qpresets = load_quality_presets()
     return templates.TemplateResponse("index.html", {
         "request": request,
         "cards": cards,
         "new_cams": new_cams,
         "profiles": list(profiles.keys()),
+        "qualities": list(qpresets.keys()) or ["low", "medium", "high"],
+        "x264_presets": ["ultrafast", "superfast", "veryfast", "faster", "fast"],
         "host": request.headers.get("host", "").split(":")[0] or "pitato.local",
     })
 
@@ -294,6 +306,12 @@ class CamSettings(BaseModel):
     fps: int = Field(ge=1, le=240)
     encode: str = "h264"
     profile: str = "balanced"
+    quality: str = "medium"
+    bitrate_kbps: int | None = Field(default=None, ge=100, le=20000)
+    x264_preset: str | None = None
+    gop_seconds: int | None = Field(default=None, ge=1, le=10)
+    bframes: int | None = Field(default=None, ge=0, le=3)
+    mjpeg_qv: int | None = Field(default=None, ge=1, le=31)
 
 
 @app.post("/api/cam/{name}")
@@ -306,6 +324,13 @@ def api_save_cam(name: str, body: CamSettings) -> JSONResponse:
     profiles = load_profiles()
     if body.profile not in profiles:
         raise HTTPException(400, f"profile must be one of {list(profiles.keys())}")
+    qpresets = load_quality_presets()
+    if qpresets and body.quality not in qpresets:
+        raise HTTPException(400, f"quality must be one of {list(qpresets.keys())}")
+    if body.x264_preset is not None and body.x264_preset not in ALLOWED_X264_PRESETS:
+        raise HTTPException(400, f"x264_preset must be one of {sorted(ALLOWED_X264_PRESETS)}")
+    if body.bframes is not None and body.bframes not in ALLOWED_BFRAMES:
+        raise HTTPException(400, f"bframes must be one of {sorted(ALLOWED_BFRAMES)}")
 
     doc = load_cameras()
     cams = doc.setdefault("cameras", [])
@@ -313,7 +338,13 @@ def api_save_cam(name: str, body: CamSettings) -> JSONResponse:
         "name": name, "by_id": body.by_id, "format": body.format,
         "width": body.width, "height": body.height, "fps": body.fps,
         "encode": body.encode, "profile": body.profile,
+        "quality": body.quality,
     }
+    # Only persist advanced overrides if non-null — keeps cameras.yml clean.
+    for k in ("bitrate_kbps", "x264_preset", "gop_seconds", "bframes", "mjpeg_qv"):
+        v = getattr(body, k)
+        if v is not None:
+            new_entry[k] = v
     for i, c in enumerate(cams):
         if c["name"] == name:
             cams[i] = new_entry

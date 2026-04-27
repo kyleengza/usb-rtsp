@@ -1,0 +1,35 @@
+# Compression quality presets — selected per camera via the `quality` field
+# in cameras.yml or the Quality dropdown in the admin panel.
+#
+# Each preset bundles libx264 settings + an MJPEG fallback q:v. The bitrate
+# is computed as `bitrate_factor × baseline-for-resolution-kbps` (baseline
+# ladder lives in bin/usb-rtsp-render: h264_bitrate_kbps).
+#
+# CPU estimates assume Pi 5 (Cortex-A76 ×4 @ 2.4 GHz):
+#   ultrafast 1080p30 ≈ 73 % of 1 core
+#   veryfast  1080p30 ≈ 110-130 % (1.1-1.3 cores)
+# Per-camera overrides in cameras.yml beat these defaults.
+
+low:
+  description: smaller streams, more compression artifacts
+  preset: ultrafast
+  bitrate_factor: 0.5
+  gop_seconds: 2
+  bframes: 0
+  mjpeg_qv: 6
+
+medium:
+  description: balanced (default for new cameras)
+  preset: ultrafast
+  bitrate_factor: 1.0
+  gop_seconds: 2
+  bframes: 0
+  mjpeg_qv: 3
+
+high:
+  description: better quality, more CPU (~1.2 cores @ 1080p30)
+  preset: veryfast
+  bitrate_factor: 1.5
+  gop_seconds: 4
+  bframes: 1
+  mjpeg_qv: 2

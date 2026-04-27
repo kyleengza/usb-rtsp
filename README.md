@@ -85,6 +85,43 @@ disconnect after one frame. Transcoding to H.264 dodges the issue entirely
 and the CPU cost on a Pi 5 stays under one core. Use `mjpeg` if your camera
 is known clean *and* you only consume from desktop ffplay/VLC.
 
+## Compression knobs
+
+The admin panel exposes a **Quality** dropdown (primary control) plus an
+**Advanced overrides ▾** expander for explicit knobs. The same fields are
+hand-editable in `~/.config/usb-rtsp/cameras.yml`.
+
+### Quality presets (`etc/quality-presets.yml`)
+
+| Preset | x264 preset | Bitrate (× resolution baseline) | GOP | B-frames | MJPEG q:v | Pi 5 cost @ 1080p30 |
+|---|---|---|---|---|---|---|
+| `low` | ultrafast | 0.5× | 2 s | 0 | 6 | ~35 % of one core |
+| `medium` *(default)* | ultrafast | 1.0× | 2 s | 0 | 3 | ~75 % of one core |
+| `high` | veryfast | 1.5× | 4 s | 1 | 2 | ~120 % (1.2 cores) |
+
+Resolution baseline (the "1.0× bitrate" target):
+
+| Resolution | kbps |
+|---|---|
+| 1920×1080 | 2500 |
+| 1280×720 | 1500 |
+| 640×480 | 800 |
+| ≤ 480p | 500 |
+
+So `cam0 @ 1080p / quality=high` → 2500 × 1.5 = **3750 kbps**.
+
+### Advanced overrides (per camera)
+
+| Field | Type | When set | Effect |
+|---|---|---|---|
+| `bitrate_kbps` | int 100-20000 | always | Replaces `factor × baseline`. |
+| `x264_preset` | enum | h264 only | Picks libx264 preset directly. Higher (slower) = tighter bitstream at the same bitrate but more CPU. |
+| `gop_seconds` | int 1-10 | h264 only | Keyframe interval. Smaller = faster reconnect/seek, larger stream; bigger = more efficient compression. |
+| `bframes` | 0-3 | h264 only | B-frames. >0 auto-promotes `-profile:v` to `main`. Better compression, slightly higher latency. |
+| `mjpeg_qv` | int 1-31 | mjpeg only | ffmpeg `-q:v` (1 = best, 31 = worst). |
+
+Blank in the panel / absent in `cameras.yml` = use the Quality preset's value.
+
 ## Quality / smoothing profiles
 
 Each camera entry has a `profile` key, mapped from `etc/profiles.yml`:

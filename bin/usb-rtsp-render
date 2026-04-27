@@ -49,21 +49,32 @@ def ffmpeg_input_format(fourcc: str) -> str:
     return V4L2_TO_FFMPEG_INPUT_FORMAT.get(fourcc.upper(), fourcc.lower())
 
 
-def h264_bitrate(width: int, height: int) -> str:
-    """Sensible bitrate target for libx264 ultrafast given a resolution.
-
-    Tuned for WiFi-tethered phone clients — 'ultrafast' produces less
-    efficient bitstreams than 'medium', so we leave headroom. Bump these
-    up if you only consume from wired desktop clients.
+def h264_bitrate_kbps(width: int, height: int, factor: float = 1.0) -> int:
+    """Baseline kbps target for libx264 ultrafast at a given resolution,
+    scaled by a quality preset's `bitrate_factor`. Tuned to leave headroom
+    for WiFi-tethered phones with the 'ultrafast' preset's looser bitstream.
     """
     pixels = width * height
-    if pixels >= 1920 * 1080: return "2500k"
-    if pixels >= 1280 * 720:  return "1500k"
-    if pixels >= 640 * 480:   return "800k"
-    return "500k"
+    if pixels >= 1920 * 1080: base = 2500
+    elif pixels >= 1280 * 720: base = 1500
+    elif pixels >= 640 * 480:  base = 800
+    else:                      base = 500
+    return max(100, int(round(base * float(factor))))
 
 
-def ffmpeg_cmd(cam: dict, profile: dict) -> str:
+# ----------------------------------------------------------------------
+# allowlists for the per-cam advanced overrides (kept here so render and
+# admin/app.py can both import and stay in sync if we ever refactor).
+# ----------------------------------------------------------------------
+ALLOWED_X264_PRESETS = ("ultrafast", "superfast", "veryfast", "faster", "fast")
+ALLOWED_BFRAMES = (0, 1, 2, 3)
+
+
+def load_quality_presets(path: Path) -> dict:
+    return yaml.safe_load(path.read_text()) or {}
+
+
+def ffmpeg_cmd(cam: dict, profile: dict, qpresets: dict | None = None) -> str:
     """Build the ffmpeg command for a camera's runOnInit.
 
     `format` is the v4l2 *input* format (what the camera produces).
@@ -86,6 +97,15 @@ def ffmpeg_cmd(cam: dict, profile: dict) -> str:
     transport = profile["transport"]
     encode = cam.get("encode") or default_encode(fmt)
 
+    # Resolve compression knobs: per-cam override > quality preset > hard fallback.
+    qpresets = qpresets or {}
+    qprof = qpresets.get(cam.get("quality") or "medium", qpresets.get("medium", {}))
+    x264_preset = cam.get("x264_preset") or qprof.get("preset", "ultrafast")
+    bitrate_k = cam.get("bitrate_kbps") or h264_bitrate_kbps(w, h, qprof.get("bitrate_factor", 1.0))
+    gop_seconds = cam.get("gop_seconds") or qprof.get("gop_seconds", 2)
+    bframes = cam.get("bframes") if cam.get("bframes") is not None else qprof.get("bframes", 0)
+    mjpeg_qv = cam.get("mjpeg_qv") or qprof.get("mjpeg_qv", 3)
+
     common_in = (
         f"-hide_banner -loglevel warning "
         f"-f v4l2 -input_format {ffmpeg_input_format(fmt)} "
@@ -100,23 +120,23 @@ def ffmpeg_cmd(cam: dict, profile: dict) -> str:
     if encode == "copy":
         codec = "-c copy"
     elif encode == "mjpeg":
-        codec = "-c:v mjpeg -q:v 3 -huffman default"
+        codec = f"-c:v mjpeg -q:v {int(mjpeg_qv)} -huffman default"
     elif encode == "h264":
-        bitrate = h264_bitrate(w, h)
-        # -profile baseline + -vf format=yuv420p forces TV-range yuv420p in the
-        # SPS (ffmpeg/libx264 will otherwise tag MJPEG-derived input as
-        # yuvj420p / full-range, which VLC and many phone H.264 decoders
-        # silently reject — the RTSP session opens but no video renders).
-        # -an ensures the SDP advertises no audio track (some players choke
-        # on streams that promise audio but never send any).
+        # B-frames are only valid in profile=main or higher. Auto-promote.
+        h264_profile = "main" if int(bframes) > 0 else "baseline"
+        gop_frames = max(1, int(gop_seconds) * fps)
+        # -vf format=yuv420p + -color_range tv forces TV-range yuv420p in the
+        # SPS (ffmpeg would otherwise tag MJPEG-derived input as yuvj420p /
+        # full-range, which VLC and many phone H.264 decoders silently
+        # reject). -an = no audio track in the SDP.
         codec = (
             f"-an "
             f"-vf format=yuv420p,scale=in_range=full:out_range=tv "
-            f"-c:v libx264 -preset ultrafast -tune zerolatency "
-            f"-profile:v baseline -level 3.1 "
+            f"-c:v libx264 -preset {x264_preset} -tune zerolatency "
+            f"-profile:v {h264_profile} -level 3.1 "
             f"-pix_fmt yuv420p -color_range tv "
-            f"-b:v {bitrate} -maxrate {bitrate} -bufsize {bitrate} "
-            f"-g {fps * 2} -keyint_min {fps} -bf 0"
+            f"-b:v {bitrate_k}k -maxrate {bitrate_k}k -bufsize {bitrate_k}k "
+            f"-g {gop_frames} -keyint_min {fps} -bf {int(bframes)}"
         )
     else:
         codec = "-c copy"
@@ -131,9 +151,10 @@ def default_encode(fmt: str) -> str:
     return "h264"
 
 
-def build_config(cameras_doc: dict, profiles_doc: dict) -> dict:
+def build_config(cameras_doc: dict, profiles_doc: dict, qpresets_doc: dict | None = None) -> dict:
     """Build the mediamtx config dict."""
     cams = cameras_doc.get("cameras", [])
+    qpresets_doc = qpresets_doc or {}
     # union of all per-cam profile knobs → top-level mediamtx settings
     # (mediamtx has these globally; we pick the most generous of the active profiles)
     profile_names = {c.get("profile", "balanced") for c in cams} or {"balanced"}
@@ -147,7 +168,7 @@ def build_config(cameras_doc: dict, profiles_doc: dict) -> dict:
         profile = profiles_doc.get(prof_name, profiles_doc["balanced"])
         paths[cam["name"]] = {
             "source": "publisher",
-            "runOnInit": ffmpeg_cmd(cam, profile),
+            "runOnInit": ffmpeg_cmd(cam, profile, qpresets_doc),
             "runOnInitRestart": True,
         }
 
@@ -222,6 +243,7 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--cameras", default=str(DEFAULT_CONFIG_DIR / "cameras.yml"))
     p.add_argument("--profiles", default=str(REPO_ROOT / "etc" / "profiles.yml"))
+    p.add_argument("--quality-presets", default=str(REPO_ROOT / "etc" / "quality-presets.yml"))
     p.add_argument("--out", default=str(DEFAULT_CONFIG_DIR / "mediamtx.yml"))
     p.add_argument(
         "--seed-if-missing",
@@ -251,7 +273,9 @@ def main() -> int:
 
     cameras_doc = yaml.safe_load(cameras_path.read_text()) or {}
     profiles_doc = yaml.safe_load(profiles_path.read_text()) or {}
-    config = build_config(cameras_doc, profiles_doc)
+    qpresets_path = Path(args.quality_presets)
+    qpresets_doc = load_quality_presets(qpresets_path) if qpresets_path.exists() else {}
+    config = build_config(cameras_doc, profiles_doc, qpresets_doc)
     rendered = yaml.safe_dump(config, sort_keys=False, default_flow_style=False)
 
     if args.print:

@@ -117,6 +117,53 @@
         </select>
       </label>
 
+      <label>Quality
+        <select name="quality">
+          {% set cur_q = cam.quality if cam.quality is defined else 'medium' %}
+          {% for q in qualities %}
+            <option value="{{ q }}" {% if q == cur_q %}selected{% endif %}>{{ q.replace('_', ' ') }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <details class="advanced">
+        <summary>Advanced overrides ▾</summary>
+        <div class="advanced-grid">
+          <label class="adv">Bitrate (kbps)
+            <input type="number" name="bitrate_kbps" min="100" max="20000" step="50"
+                   value="{{ cam.bitrate_kbps if cam.bitrate_kbps is defined else '' }}"
+                   placeholder="auto from preset">
+          </label>
+          <label class="adv">x264 preset
+            <select name="x264_preset">
+              <option value="">(use quality preset)</option>
+              {% for p in x264_presets %}
+                <option value="{{ p }}" {% if cam.x264_preset is defined and cam.x264_preset == p %}selected{% endif %}>{{ p }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="adv">GOP (seconds)
+            <input type="number" name="gop_seconds" min="1" max="10" step="1"
+                   value="{{ cam.gop_seconds if cam.gop_seconds is defined else '' }}"
+                   placeholder="auto">
+          </label>
+          <label class="adv">B-frames
+            <select name="bframes">
+              <option value="">(use quality preset)</option>
+              {% for n in [0, 1, 2, 3] %}
+                <option value="{{ n }}" {% if cam.bframes is defined and cam.bframes == n %}selected{% endif %}>{{ n }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="adv adv-mjpeg">MJPEG q:v
+            <input type="number" name="mjpeg_qv" min="1" max="31" step="1"
+                   value="{{ cam.mjpeg_qv if cam.mjpeg_qv is defined else '' }}"
+                   placeholder="auto">
+            <small>1 = best, 31 = worst (only used when encode=mjpeg)</small>
+          </label>
+        </div>
+      </details>
+
       <div class="actions">
         <button type="submit">Save &amp; reload</button>
         <button type="button" data-act="snap">Snapshot</button>

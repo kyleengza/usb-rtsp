@@ -143,6 +143,17 @@ function wireUpCard(card) {
 
   if (caps.length) rebuildRes();
 
+  // toggle the MJPEG q:v row visibility based on Encode dropdown
+  const encSel = $("select[name=encode]", card);
+  const mjpegRow = $(".adv-mjpeg", card);
+  function syncMjpegRow() {
+    if (mjpegRow) mjpegRow.classList.toggle("hidden", encSel.value !== "mjpeg");
+  }
+  if (encSel && mjpegRow) {
+    encSel.addEventListener("change", syncMjpegRow);
+    syncMjpegRow();
+  }
+
   // form submit → POST /api/cam/{name}
   $("form[data-cam-form]", card).addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -153,6 +164,15 @@ function wireUpCard(card) {
 
     const fd = new FormData(form);
     const [w, h] = fd.get("resolution").split("x");
+    // blank advanced inputs → null (server falls back to quality preset)
+    const num = (k) => {
+      const v = (fd.get(k) ?? "").toString().trim();
+      return v === "" ? null : parseInt(v, 10);
+    };
+    const str = (k) => {
+      const v = (fd.get(k) ?? "").toString().trim();
+      return v === "" ? null : v;
+    };
     const body = {
       by_id: fd.get("by_id"),
       format: fd.get("format"),
@@ -161,6 +181,12 @@ function wireUpCard(card) {
       fps: parseInt(fd.get("fps"), 10),
       encode: fd.get("encode") || "h264",
       profile: fd.get("profile"),
+      quality: fd.get("quality") || "medium",
+      bitrate_kbps: num("bitrate_kbps"),
+      x264_preset: str("x264_preset"),
+      gop_seconds: num("gop_seconds"),
+      bframes: num("bframes"),
+      mjpeg_qv: num("mjpeg_qv"),
     };
 
     const name = card.dataset.cam;

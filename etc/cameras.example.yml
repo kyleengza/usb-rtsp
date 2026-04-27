@@ -27,3 +27,14 @@ cameras:
     fps: 30
     encode: h264
     profile: balanced
+    # Quality preset (compression knob). See etc/quality-presets.yml.
+    #   low    — smaller, more artifacts (0.5× bitrate, ultrafast)
+    #   medium — balanced (1.0× bitrate, ultrafast)         ← default
+    #   high   — better, more CPU (1.5× bitrate, veryfast, 1 B-frame)
+    quality: medium
+    # Advanced overrides — comment in only what you want to override:
+    # bitrate_kbps: 2000      # explicit kbps; blank = preset × resolution
+    # x264_preset: veryfast   # ultrafast | superfast | veryfast | faster | fast
+    # gop_seconds: 2          # keyframe interval; smaller = quicker recovery
+    # bframes: 0              # 0..3; >0 auto-promotes -profile:v to main
+    # mjpeg_qv: 3             # 1 (best) … 31 (worst), only when encode=mjpeg
