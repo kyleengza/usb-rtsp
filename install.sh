@@ -38,8 +38,12 @@ for pkg in "${APT_DEPS[@]}"; do
   dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
 done
 if (( ${#missing[@]} )); then
-  die "missing packages: ${missing[*]}
-  install with: sudo apt install ${missing[*]}"
+  bold "installing missing packages: ${missing[*]} (sudo required)…"
+  sudo apt-get update -qq
+  sudo apt-get install -y --no-install-recommends "${missing[@]}"
+  for pkg in "${missing[@]}"; do
+    dpkg -s "$pkg" >/dev/null 2>&1 || die "$pkg still missing after apt-get install"
+  done
 fi
 green "✓ apt deps present"
 

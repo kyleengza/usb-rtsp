@@ -22,12 +22,14 @@ LAN-only by default, no auth — flip on mediamtx's `authInternalUsers` block in
 ```sh
 git clone <this-repo> ~/usb-rtsp
 cd ~/usb-rtsp
-
-sudo apt install ffmpeg v4l-utils python3-fastapi python3-uvicorn \
-                 python3-jinja2 python3-yaml python3-multipart curl tar
-
 ./install.sh
 ```
+
+The installer asks for sudo once to (a) `apt install` any missing dependencies
+(`ffmpeg v4l-utils python3-fastapi python3-uvicorn python3-jinja2 python3-yaml python3-multipart curl tar`),
+(b) drop the mediamtx binary into `/usr/local/bin/`, and (c) enable systemd
+user-linger so the services survive reboot. Everything else lives in
+`~/.config/`.
 
 The installer is idempotent — re-run after `git pull`, after editing
 `etc/profiles.yml`, or any time you want to re-render `mediamtx.yml` from
