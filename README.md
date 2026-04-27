@@ -127,6 +127,20 @@ update will add a delete button.)
 
 ## Troubleshooting
 
+**VLC says "VLC is unable to open the MRL …" or "Connection failed".** VLC's
+default RTSP transport is UDP, and its fallback path-construction trips
+mediamtx's `invalid SETUP path` check (especially for MJPEG). Force VLC into
+TCP mode:
+
+- GUI: *Tools → Preferences → Input/Codecs → Live555 stream transport →
+  RTP over RTSP (TCP)* → Save → restart VLC.
+- CLI: `vlc --rtsp-tcp rtsp://<host>:8554/<cam>`
+
+If you're not sure whether it's VLC or the server, try `ffplay
+rtsp://<host>:8554/<cam>` — ffplay defaults to TCP and should always work.
+Server-side logs (`systemctl --user status usb-rtsp`) will show the SETUP
+attempt and the reason for any rejection.
+
 **mediamtx fails to start, says "device busy".** Something else is holding
 `/dev/video0`. Likely candidates: another mediamtx, `motion`, an open `vlc`
 session via v4l2 instead of RTSP. `lsof /dev/video0` finds the culprit.
