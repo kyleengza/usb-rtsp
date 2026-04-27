@@ -1,0 +1,23 @@
+# Quality profiles. Each maps to mediamtx settings + ffmpeg transport.
+# Used by usb-rtsp-render and the admin panel.
+#
+# - transport: how the ffmpeg producer publishes back to mediamtx (tcp = reliable, udp = lower latency)
+# - read_buffer_count: mediamtx top-level readBufferCount (RTSP read packet ring)
+# - write_queue_size: mediamtx top-level writeQueueSize (per-publisher outbound queue)
+#
+# Higher buffer values = smoother playback over jittery WiFi at the cost of added latency.
+
+smooth:
+  transport: tcp
+  read_buffer_count: 4096
+  write_queue_size: 1024
+
+balanced:
+  transport: tcp
+  read_buffer_count: 2048
+  write_queue_size: 512
+
+low_latency:
+  transport: udp
+  read_buffer_count: 512
+  write_queue_size: 256

@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+*.bak
+*.bak.*
+/snapshots/
+/tmp/
+.DS_Store

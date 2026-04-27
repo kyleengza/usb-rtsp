@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# snap — grab one frame from a local RTSP stream and save as JPEG.
+#
+# usage:
+#   snap <cam>                         # → ~/.config/usb-rtsp/snapshots/<cam>-YYYYMMDD-HHMMSS.jpg
+#   snap <cam> /path/to/out.jpg        # → explicit path (parent must exist)
+#   snap <cam> --quality 4             # ffmpeg -q:v (1=best, 31=worst); default 2
+#   snap <cam> /tmp/x.jpg --quality 5  # both
+#   snap                               # list configured cams (from cameras.yml)
+#
+# Pulls from rtsp://127.0.0.1:8554/<cam> via ffmpeg with -rtsp_transport tcp.
+# No device contention with the running mediamtx producer.
+
+set -euo pipefail
+
+CONFIG_DIR="${USB_RTSP_CONFIG_DIR:-$HOME/.config/usb-rtsp}"
+SNAP_DIR="${USB_RTSP_SNAP_DIR:-$CONFIG_DIR/snapshots}"
+RTSP_HOST="${USB_RTSP_HOST:-127.0.0.1:8554}"
+
+list_cams() {
+  local cams_file="$CONFIG_DIR/cameras.yml"
+  if [[ ! -f "$cams_file" ]]; then
+    echo "no cameras.yml at $cams_file — is usb-rtsp installed?" >&2
+    return 1
+  fi
+  python3 -c '
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1])) or {}
+for c in d.get("cameras", []):
+    print(c["name"])
+' "$cams_file"
+}
+
+if [[ $# -eq 0 ]]; then
+  echo "configured cameras:"
+  list_cams | sed 's/^/  /'
+  exit 0
+fi
+
+cam=""
+out=""
+quality=2
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --quality|-q)
+      quality="$2"; shift 2 ;;
+    --quality=*)
+      quality="${1#*=}"; shift ;;
+    -h|--help)
+      sed -n '2,11p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    -*)
+      echo "unknown flag: $1" >&2; exit 2 ;;
+    *)
+      if [[ -z "$cam" ]]; then cam="$1"
+      elif [[ -z "$out" ]]; then out="$1"
+      else echo "too many args: $1" >&2; exit 2
+      fi
+      shift ;;
+  esac
+done
+
+if [[ -z "$cam" ]]; then
+  echo "usage: snap <cam> [output.jpg] [--quality N]" >&2
+  exit 2
+fi
+
+if [[ ! "$cam" =~ ^[a-z][a-z0-9_-]{0,15}$ ]]; then
+  echo "invalid cam name: $cam (expected ^[a-z][a-z0-9_-]{0,15}$)" >&2
+  exit 2
+fi
+
+if [[ ! "$quality" =~ ^[1-9]$|^[12][0-9]$|^31$|^30$ ]]; then
+  echo "invalid quality: $quality (expected 1-31)" >&2
+  exit 2
+fi
+
+if [[ -z "$out" ]]; then
+  mkdir -p "$SNAP_DIR"
+  out="$SNAP_DIR/${cam}-$(date +%Y%m%d-%H%M%S).jpg"
+fi
+
+ffmpeg -y -hide_banner -loglevel error \
+  -rtsp_transport tcp \
+  -i "rtsp://${RTSP_HOST}/${cam}" \
+  -frames:v 1 -q:v "$quality" "$out"
+
+echo "$out"

@@ -1,0 +1,17 @@
+[Unit]
+Description=usb-rtsp — mediamtx RTSP server for USB cameras
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=USB_RTSP_CONFIG_DIR=%h/.config/usb-rtsp
+ExecStart=/usr/local/bin/mediamtx %h/.config/usb-rtsp/mediamtx.yml
+Restart=on-failure
+RestartSec=2
+# mediamtx is a Go binary that handles signals; SIGTERM = clean shutdown
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target

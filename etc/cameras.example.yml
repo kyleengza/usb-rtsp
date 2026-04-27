@@ -1,0 +1,18 @@
+# cameras.yml schema (the admin panel writes this; you can also hand-edit).
+#
+# Each camera entry produces one mediamtx path mounted at rtsp://<host>:8554/<name>.
+# `by_id` is the stable /dev/v4l/by-id/<...>-video-index0 leaf — survives unplug/replug
+# and USB reordering. Run `bin/usb-rtsp-detect` to see what's available.
+#
+# `format` must be one of the formats the camera advertises (MJPG, YUYV, ...).
+# `width`/`height`/`fps` must be a valid combination from the camera's capabilities.
+# `profile` selects buffering/transport from etc/profiles.yml.
+
+cameras:
+  - name: cam0
+    by_id: usb-GENERAL_GENERAL_WEBCAM_JH0319_20200710_v012-video-index0
+    format: MJPG
+    width: 1920
+    height: 1080
+    fps: 30
+    profile: balanced

@@ -1,0 +1,17 @@
+[Unit]
+Description=usb-rtsp — admin panel (FastAPI/uvicorn)
+After=network-online.target usb-rtsp.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=USB_RTSP_CONFIG_DIR=%h/.config/usb-rtsp
+Environment=USB_RTSP_REPO=@@REPO_DIR@@
+Environment=PYTHONPATH=@@REPO_DIR@@
+WorkingDirectory=@@REPO_DIR@@
+ExecStart=/usr/bin/uvicorn admin.app:app --host 0.0.0.0 --port 8080 --log-level warning
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
