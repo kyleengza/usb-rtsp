@@ -101,9 +101,25 @@
     <div class="auth-row">
       <span class="auth-label">password</span>
       <code id="stream-pass">●●●●●●●●●●●●●●●●●●●●●●●●</code>
-      <button type="button" data-act="reveal-pass">Show</button>
-      <button type="button" class="copy" id="copy-pass">copy</button>
-      <button type="button" class="danger" data-act="rotate-pass">Rotate</button>
+      <span class="hint">embedded in every URL on the dashboard — no need to read it</span>
+    </div>
+    <div class="auth-row">
+      <span class="auth-label">rotate</span>
+      <button type="button" class="danger" data-act="rotate-pass">Rotate now</button>
+      <span class="hint">disconnects every active client; URLs in the panel reload automatically</span>
+    </div>
+    <div class="auth-row">
+      <span class="auth-label">auto</span>
+      <label class="switch">
+        <input type="checkbox" id="auto-rotate-toggle">
+        <span class="slider"></span>
+      </label>
+      <select id="auto-rotate-schedule">
+        <option value="daily">daily</option>
+        <option value="weekly" selected>weekly</option>
+        <option value="monthly">monthly</option>
+      </select>
+      <span class="hint">runs <code>usb-rtsp-rotate.timer</code> on this schedule</span>
     </div>
     <div class="form-status" id="auth-status"></div>
   </div>

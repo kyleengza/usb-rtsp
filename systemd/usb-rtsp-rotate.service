@@ -1,0 +1,9 @@
+[Unit]
+Description=usb-rtsp — rotate stream password
+After=usb-rtsp.service
+
+[Service]
+Type=oneshot
+Environment=USB_RTSP_REPO=@@REPO_DIR@@
+Environment=USB_RTSP_CONFIG_DIR=%h/.config/usb-rtsp
+ExecStart=/usr/bin/python3 @@REPO_DIR@@/bin/usb-rtsp-rotate-stream

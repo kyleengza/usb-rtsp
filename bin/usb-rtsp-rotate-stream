@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""Rotate the stream password and reload mediamtx.
+
+Used by:
+  - the panel's POST /api/auth/stream-rotate (interactive)
+  - the systemd timer usb-rtsp-rotate.timer (auto-rotate)
+
+Generates a fresh 24-byte url-safe password, writes 0600 to
+~/.config/usb-rtsp/.stream-pass, re-renders mediamtx.yml via
+core.renderer, and restarts the usb-rtsp user unit. Doesn't touch
+the admin service — admin re-reads .stream-pass per request.
+"""
+from __future__ import annotations
+
+import os
+import secrets
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(os.environ.get("USB_RTSP_REPO", Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(REPO))
+
+from core import auth as auth_lib  # noqa: E402
+from core.helpers import REPO_DIR  # noqa: E402
+
+
+def main() -> int:
+    if not auth_lib.streams_enabled():
+        print("stream auth not enabled (./install.sh --enable-auth first)", file=sys.stderr)
+        return 1
+
+    new_pass = secrets.token_urlsafe(24)
+    pf = auth_lib.STREAM_PASS_FILE
+    pf.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(pf, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, new_pass.encode())
+    finally:
+        os.close(fd)
+
+    p = subprocess.run(
+        ["python3", "-m", "core.renderer"],
+        cwd=str(REPO_DIR),
+        capture_output=True, text=True, timeout=15,
+    )
+    if p.returncode != 0:
+        print(f"render failed: {(p.stdout + p.stderr).strip()}", file=sys.stderr)
+        return 2
+
+    p = subprocess.run(
+        ["systemctl", "--user", "restart", "usb-rtsp"],
+        capture_output=True, text=True, timeout=10,
+    )
+    if p.returncode != 0:
+        print(f"restart failed: {p.stderr.strip()}", file=sys.stderr)
+        return 3
+
+    print(f"rotated {pf} ({len(new_pass)} chars), mediamtx restarted")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

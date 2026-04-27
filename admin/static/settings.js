@@ -47,16 +47,9 @@
   });
 
   // ─── stream credential rotation ────────────────────────────────────────
-  let realPass = null;        // populated when /api/auth/stream-credentials returns
-  let revealed = false;
-
-  function maskedPass(s) { return "●".repeat(Math.max(8, Math.min(28, s?.length || 24))); }
-
-  function setPassDisplay() {
-    const el = $("#stream-pass");
-    if (!el) return;
-    el.textContent = revealed && realPass ? realPass : maskedPass(realPass);
-  }
+  // The password is never read directly by humans — it's embedded in
+  // every URL on the dashboard. We just expose a Rotate button + an
+  // auto-rotate timer toggle.
 
   async function loadStreamCreds() {
     try {
@@ -72,37 +65,48 @@
       status.classList.add("ok");
       status.textContent = "stream auth enabled";
       $("#stream-user").textContent = j.user;
-      realPass = j.password;
-      setPassDisplay();
       creds.hidden = false;
     } catch {}
   }
 
-  $("[data-act=reveal-pass]")?.addEventListener("click", (e) => {
-    revealed = !revealed;
-    setPassDisplay();
-    e.currentTarget.textContent = revealed ? "Hide" : "Show";
-    if (revealed) {
-      // auto-mask after 15 s
-      setTimeout(() => {
-        if (revealed) {
-          revealed = false;
-          setPassDisplay();
-          const btn = $("[data-act=reveal-pass]");
-          if (btn) btn.textContent = "Show";
-        }
-      }, 15000);
-    }
-  });
+  async function loadAutoRotateState() {
+    try {
+      const r = await fetch("/api/auth/auto-rotate");
+      const j = await r.json();
+      $("#auto-rotate-toggle").checked = !!j.enabled;
+      const sched = $("#auto-rotate-schedule");
+      if (j.schedule) sched.value = j.schedule;
+    } catch {}
+  }
 
-  $("#copy-pass")?.addEventListener("click", async (e) => {
-    if (!realPass) return;
-    const btn = e.currentTarget;
-    const orig = btn.textContent;
-    const ok = await window.copyText(realPass);
-    btn.classList.toggle("ok", ok);
-    btn.textContent = ok ? "copied" : "select+ctrl-c";
-    setTimeout(() => { btn.textContent = orig; btn.classList.remove("ok"); }, 1500);
+  async function saveAutoRotate() {
+    const status = $("#auth-status");
+    status.className = "form-status";
+    const enabled = $("#auto-rotate-toggle").checked;
+    const schedule = $("#auto-rotate-schedule").value;
+    status.textContent = enabled ? `enabling ${schedule} auto-rotate…` : "disabling auto-rotate…";
+    try {
+      const r = await fetch("/api/auth/auto-rotate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled, schedule }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+      status.classList.add("ok");
+      status.textContent = enabled
+        ? `auto-rotate ${schedule} (next fire on systemd's calendar)`
+        : "auto-rotate disabled";
+      setTimeout(() => { status.textContent = ""; status.className = "form-status"; }, 4000);
+    } catch (err) {
+      status.classList.add("err");
+      status.textContent = `error: ${err.message}`;
+    }
+  }
+
+  $("#auto-rotate-toggle")?.addEventListener("change", saveAutoRotate);
+  $("#auto-rotate-schedule")?.addEventListener("change", () => {
+    if ($("#auto-rotate-toggle").checked) saveAutoRotate();
   });
 
   $("[data-act=rotate-pass]")?.addEventListener("click", async (e) => {
@@ -118,13 +122,8 @@
       const r = await fetch("/api/auth/stream-rotate", { method: "POST" });
       const j = await r.json();
       if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
-      realPass = j.password;
-      revealed = true;
-      setPassDisplay();
-      const reveal = $("[data-act=reveal-pass]");
-      if (reveal) reveal.textContent = "Hide";
       status.classList.add("ok");
-      status.textContent = `rotated · admin restarting · reloading in 6 s — copy the new password now`;
+      status.textContent = `rotated · admin restarting · reloading in 6 s`;
       setTimeout(() => location.reload(), 6000);
     } catch (err) {
       status.classList.add("err");
@@ -137,4 +136,5 @@
 
   // Boot
   loadStreamCreds();
+  loadAutoRotateState();
 })();

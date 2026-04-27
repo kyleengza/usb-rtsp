@@ -1,0 +1,12 @@
+[Unit]
+Description=usb-rtsp — periodic stream password rotation
+After=usb-rtsp.service
+
+[Timer]
+OnCalendar=@@SCHEDULE@@
+Persistent=true
+RandomizedDelaySec=15m
+Unit=usb-rtsp-rotate.service
+
+[Install]
+WantedBy=timers.target

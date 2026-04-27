@@ -15,6 +15,8 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
+import yaml
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -643,6 +645,86 @@ def api_stream_credentials() -> JSONResponse:
         return JSONResponse({"enabled": False})
     user, password = creds
     return JSONResponse({"enabled": True, "user": user, "password": password})
+
+
+ALLOWED_ROTATE_SCHEDULES = {
+    "daily":   "daily",
+    "weekly":  "weekly",
+    "monthly": "monthly",
+}
+
+
+def _rotate_unit_paths() -> tuple[Path, Path]:
+    user_systemd = Path.home() / ".config" / "systemd" / "user"
+    return user_systemd / "usb-rtsp-rotate.service", user_systemd / "usb-rtsp-rotate.timer"
+
+
+def _install_rotate_units(schedule: str) -> None:
+    """Render systemd user units from templates and reload."""
+    if schedule not in ALLOWED_ROTATE_SCHEDULES:
+        raise HTTPException(400, f"schedule must be one of {sorted(ALLOWED_ROTATE_SCHEDULES)}")
+    on_calendar = ALLOWED_ROTATE_SCHEDULES[schedule]
+    svc_dst, timer_dst = _rotate_unit_paths()
+    svc_dst.parent.mkdir(parents=True, exist_ok=True)
+    svc_src = REPO_DIR / "systemd" / "usb-rtsp-rotate.service"
+    timer_src = REPO_DIR / "systemd" / "usb-rtsp-rotate.timer"
+    svc_dst.write_text(svc_src.read_text().replace("@@REPO_DIR@@", str(REPO_DIR)))
+    timer_dst.write_text(timer_src.read_text().replace("@@SCHEDULE@@", on_calendar))
+    subprocess.run(["systemctl", "--user", "daemon-reload"], timeout=10)
+
+
+def _set_auto_rotate_persisted(enabled: bool, schedule: str | None) -> None:
+    """Persist auto_rotate state into auth.yml so the panel re-renders correctly."""
+    cfg = auth_lib.load_config()
+    cfg.setdefault("streams", {})
+    cfg["streams"]["auto_rotate"] = {
+        "enabled": bool(enabled),
+        "schedule": schedule or "weekly",
+    }
+    auth_lib.AUTH_YML.parent.mkdir(parents=True, exist_ok=True)
+    auth_lib.AUTH_YML.write_text(yaml.safe_dump(cfg, sort_keys=False))
+
+
+@app.get("/api/auth/auto-rotate")
+def api_auto_rotate_state() -> JSONResponse:
+    cfg = auth_lib.load_config()
+    ar = (cfg.get("streams") or {}).get("auto_rotate") or {}
+    # check live timer state
+    p = subprocess.run(
+        ["systemctl", "--user", "is-active", "usb-rtsp-rotate.timer"],
+        capture_output=True, text=True, timeout=5,
+    )
+    return JSONResponse({
+        "enabled": bool(ar.get("enabled")),
+        "schedule": ar.get("schedule", "weekly"),
+        "timer_active": p.returncode == 0,
+        "schedules": sorted(ALLOWED_ROTATE_SCHEDULES.keys()),
+    })
+
+
+@app.post("/api/auth/auto-rotate")
+async def api_auto_rotate_set(request: Request) -> JSONResponse:
+    if not auth_lib.streams_enabled():
+        raise HTTPException(400, "stream auth is not enabled (./install.sh --enable-auth first)")
+    body = await request.json()
+    enable = bool(body.get("enabled"))
+    schedule = body.get("schedule") or "weekly"
+    if schedule not in ALLOWED_ROTATE_SCHEDULES:
+        raise HTTPException(400, f"schedule must be one of {sorted(ALLOWED_ROTATE_SCHEDULES)}")
+
+    if enable:
+        _install_rotate_units(schedule)
+        subprocess.run(
+            ["systemctl", "--user", "enable", "--now", "usb-rtsp-rotate.timer"],
+            capture_output=True, text=True, timeout=10,
+        )
+    else:
+        subprocess.run(
+            ["systemctl", "--user", "disable", "--now", "usb-rtsp-rotate.timer"],
+            capture_output=True, text=True, timeout=10,
+        )
+    _set_auto_rotate_persisted(enable, schedule)
+    return JSONResponse({"enabled": enable, "schedule": schedule})
 
 
 @app.post("/api/auth/stream-rotate")
