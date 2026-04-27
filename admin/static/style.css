@@ -186,11 +186,29 @@ button.danger:hover { background: var(--err); color: white; }
 .proto-hls    { color: var(--warn); border-color: var(--warn); }
 .proto-webrtc { color: var(--ok); border-color: var(--ok); }
 
-.recovery-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
-.recovery details { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.8rem; }
+.recovery-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.6rem 0; }
+.recovery details { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.8rem; margin-top: 0.6rem; }
 .recovery summary { cursor: pointer; color: var(--muted); }
-.log-controls { display: flex; gap: 0.5rem; align-items: center; margin: 0.6rem 0 0.4rem; }
-.log-controls input { background: #0a0d12; color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.2rem 0.4rem; width: 5rem; }
+
+.svc-grid { display: grid; gap: 0.4rem; margin-bottom: 0.6rem; }
+.svc-row { display: grid; grid-template-columns: minmax(150px, 1fr) auto auto auto auto; gap: 0.6rem; align-items: center; padding: 0.5rem 0.7rem; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
+.svc-name { font-weight: 500; }
+.svc-sub { color: var(--muted); font-weight: 400; font-size: 0.78rem; }
+.svc-state { font-size: 0.75rem; }
+.svc-state.ok { color: var(--ok); border-color: var(--ok); }
+.svc-state.warn { color: var(--warn); border-color: var(--warn); }
+.svc-state.err { color: var(--err); border-color: var(--err); }
+.svc-uptime, .svc-pid { color: var(--muted); font-size: 0.78rem; font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; }
+.svc-actions { display: flex; gap: 0.3rem; }
+.svc-actions button { padding: 0.25rem 0.55rem; font-size: 0.78rem; }
+
+.log-controls { display: flex; gap: 0.5rem; align-items: center; margin: 0.6rem 0 0.4rem; flex-wrap: wrap; }
+.log-controls input[type=number] { background: #0a0d12; color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.2rem 0.4rem; width: 5rem; }
+.log-controls select { background: #0a0d12; color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.2rem 0.4rem; }
+.tail-toggle { display: flex; align-items: center; gap: 0.3rem; color: var(--muted); cursor: pointer; }
+.tail-toggle input { accent-color: var(--accent); }
+.log-status { color: var(--muted); font-size: 0.75rem; margin-left: auto; }
+.log-status.tail { color: var(--ok); }
 #logs {
   background: #0a0d12;
   padding: 0.6rem;
@@ -200,6 +218,11 @@ button.danger:hover { background: var(--err); color: white; }
   max-height: 30rem;
   white-space: pre-wrap;
 }
+
+.snapshots-summary { color: var(--muted); font-weight: 400; }
+.snap-list { list-style: none; padding: 0; margin: 0.5rem 0; max-height: 16rem; overflow-y: auto; }
+.snap-list li { display: flex; gap: 0.6rem; align-items: center; padding: 0.2rem 0; font-family: ui-monospace, monospace; font-size: 0.78rem; color: var(--muted); }
+.snap-list li .snap-size { width: 5rem; text-align: right; }
 
 footer { padding: 1.2rem; text-align: center; color: var(--muted); font-size: 0.8rem; }
 footer a { color: var(--muted); }

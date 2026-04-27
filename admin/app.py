@@ -80,22 +80,44 @@ def _api_post(path: str, body: dict | None = None, timeout: float = 3.0) -> tupl
         return 0, None
 
 
+ALLOWED_SVC_ACTIONS = {"is-active", "restart", "stop", "start", "status", "show"}
+
+
 def _systemctl(action: str, unit: str) -> tuple[int, str]:
     if unit not in ALLOWED_UNITS:
         raise HTTPException(400, f"unit not allowed: {unit}")
-    if action not in {"is-active", "restart", "status", "show"}:
+    if action not in ALLOWED_SVC_ACTIONS:
         raise HTTPException(400, f"action not allowed: {action}")
     cmd = ["systemctl", "--user", action, unit]
     p = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
     return p.returncode, (p.stdout + p.stderr).strip()
 
 
+def _service_meta(unit: str) -> dict:
+    """Return active state + ActiveEnterTimestamp + sub-state for a user unit."""
+    p = subprocess.run(
+        ["systemctl", "--user", "show", unit,
+         "--property=ActiveState,SubState,ActiveEnterTimestamp,MainPID"],
+        capture_output=True, text=True, timeout=5,
+    )
+    out = {}
+    for line in p.stdout.splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            out[k] = v
+    return out
+
+
 def _journal(unit: str, lines: int) -> str:
     if unit not in ALLOWED_UNITS:
         raise HTTPException(400, f"unit not allowed: {unit}")
     n = max(1, min(int(lines), 500))
+    # Use --user-unit (queries system journal by user-unit tag) instead of
+    # --user -u (queries the per-user journal). Debian doesn't enable
+    # per-user journal storage by default, so --user -u returns
+    # 'No journal files were found' even when the unit is logging fine.
     p = subprocess.run(
-        ["journalctl", "--user", "-u", unit, "-n", str(n), "--no-pager"],
+        ["journalctl", f"--user-unit={unit}.service", "-n", str(n), "--no-pager"],
         capture_output=True, text=True, timeout=10,
     )
     return p.stdout + (p.stderr if p.returncode else "")
@@ -499,6 +521,101 @@ def api_restart_admin() -> JSONResponse:
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     return JSONResponse({"ok": True, "msg": "restart scheduled"})
+
+
+@app.post("/api/svc/{unit}/{action}")
+def api_svc(unit: str, action: str) -> JSONResponse:
+    """Generic per-unit service control (start | stop | restart).
+
+    For 'usb-rtsp-admin restart' we fork+exit so the response makes it back
+    before the unit gets killed. For everything else we run synchronously
+    so the user sees the real exit code.
+    """
+    if unit not in ALLOWED_UNITS:
+        raise HTTPException(400, f"unit not allowed: {unit}")
+    if action not in {"start", "stop", "restart"}:
+        raise HTTPException(400, f"action not allowed: {action}")
+    if unit == "usb-rtsp-admin" and action == "restart":
+        subprocess.Popen(
+            ["systemctl", "--user", "restart", unit],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        return JSONResponse({"ok": True, "scheduled": True})
+    code, msg = _systemctl(action, unit)
+    return JSONResponse({"ok": code == 0, "code": code, "msg": msg})
+
+
+@app.get("/api/svc/{unit}")
+def api_svc_status(unit: str) -> JSONResponse:
+    if unit not in ALLOWED_UNITS:
+        raise HTTPException(400, f"unit not allowed: {unit}")
+    meta = _service_meta(unit)
+    since_str = meta.get("ActiveEnterTimestamp", "")
+    uptime_s: float | None = None
+    try:
+        # systemd timestamp format: "Mon 2026-04-27 12:00:00 SAST"
+        if since_str and since_str != "n/a":
+            from email.utils import parsedate_to_datetime
+            # parsedate is too flexible — fall back to subprocess `date` if needed.
+            # Try a simpler approach: just compute from MainPID etime.
+            pid = meta.get("MainPID", "0")
+            if pid and pid != "0":
+                p = subprocess.run(
+                    ["ps", "-o", "etimes=", "-p", pid],
+                    capture_output=True, text=True, timeout=2,
+                )
+                if p.stdout.strip():
+                    uptime_s = float(p.stdout.strip())
+    except (ValueError, ImportError, OSError):
+        pass
+    return JSONResponse({
+        "unit": unit,
+        "active": meta.get("ActiveState") == "active",
+        "active_state": meta.get("ActiveState", "unknown"),
+        "sub_state": meta.get("SubState", "unknown"),
+        "active_enter": since_str,
+        "uptime_s": uptime_s,
+        "uptime_h": fmt_duration(uptime_s) if uptime_s is not None else "—",
+        "main_pid": meta.get("MainPID", "0"),
+    })
+
+
+@app.get("/api/snapshots")
+def api_snapshots() -> JSONResponse:
+    """List snapshot files + total size (snapshot dir hygiene)."""
+    if not SNAP_DIR.exists():
+        return JSONResponse({"count": 0, "total_bytes": 0, "total_h": "0 B", "files": []})
+    files = sorted(SNAP_DIR.glob("*.jpg"), key=lambda p: p.stat().st_mtime, reverse=True)
+    items = [{
+        "name": f.name,
+        "size": f.stat().st_size,
+        "size_h": fmt_bytes(f.stat().st_size),
+        "mtime": int(f.stat().st_mtime),
+    } for f in files[:100]]
+    total = sum(f.stat().st_size for f in files)
+    return JSONResponse({
+        "count": len(files),
+        "total_bytes": total,
+        "total_h": fmt_bytes(total),
+        "files": items,
+    })
+
+
+@app.post("/api/snapshots/cleanup")
+def api_snapshots_cleanup(older_than_days: int = 7) -> JSONResponse:
+    """Delete snapshots older than N days. Default: 7."""
+    if not SNAP_DIR.exists():
+        return JSONResponse({"deleted": 0, "freed_bytes": 0})
+    cutoff = datetime.now().timestamp() - max(0, int(older_than_days)) * 86400
+    deleted = 0
+    freed = 0
+    for f in SNAP_DIR.glob("*.jpg"):
+        st = f.stat()
+        if st.st_mtime < cutoff:
+            freed += st.st_size
+            f.unlink()
+            deleted += 1
+    return JSONResponse({"deleted": deleted, "freed_bytes": freed, "freed_h": fmt_bytes(freed)})
 
 
 @app.get("/healthz")

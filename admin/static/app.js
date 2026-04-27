@@ -383,36 +383,146 @@ function wireUpCard(card) {
 
 // ─── global recovery buttons ────────────────────────────────────────────────
 
+// ─── service recovery ──────────────────────────────────────────────────────
+
+let logTailTimer = null;
+
+async function refreshSvcRow(row) {
+  const unit = row.dataset.svcRow;
+  try {
+    const r = await fetch(`/api/svc/${unit}`);
+    if (!r.ok) return;
+    const s = await r.json();
+    const state = $("[data-svc-state]", row);
+    const uptime = $("[data-svc-uptime]", row);
+    const pid = $("[data-svc-pid]", row);
+    state.textContent = `${s.active_state} / ${s.sub_state}`;
+    state.classList.remove("ok", "warn", "err");
+    state.classList.add(s.active ? "ok" : (s.active_state === "activating" ? "warn" : "err"));
+    uptime.textContent = s.uptime_h && s.uptime_h !== "—" ? `up ${s.uptime_h}` : "—";
+    pid.textContent = s.main_pid && s.main_pid !== "0" ? `pid ${s.main_pid}` : "pid —";
+  } catch {}
+}
+
+async function refreshAllSvcRows() {
+  $$(".svc-row").forEach(refreshSvcRow);
+}
+
+async function refreshLogs(announceTail = false) {
+  const unit = $("#log-unit").value;
+  const lines = parseInt($("#log-lines").value, 10) || 100;
+  const status = $("#log-status");
+  try {
+    const r = await fetch(`/api/logs?unit=${encodeURIComponent(unit)}&lines=${lines}`);
+    const j = await r.json();
+    const pre = $("#logs");
+    pre.textContent = j.text || "(no log entries — service running yet?)";
+    pre.scrollTop = pre.scrollHeight;
+    if (announceTail) {
+      status.classList.add("tail");
+      status.textContent = `tailing ${unit} every 2 s · ${new Date().toLocaleTimeString()}`;
+    }
+  } catch {
+    if (status) status.textContent = "log fetch failed";
+  }
+}
+
+async function refreshSnapshots() {
+  try {
+    const r = await fetch("/api/snapshots");
+    const j = await r.json();
+    $("[data-snapshots-summary]").textContent =
+      `(${j.count} files · ${j.total_h})`;
+    const ul = $("#snap-list");
+    if (!ul) return;
+    if (!j.files.length) {
+      ul.innerHTML = '<li class="empty">no snapshots</li>';
+      return;
+    }
+    ul.innerHTML = j.files.map(f => {
+      const dt = new Date(f.mtime * 1000).toLocaleString();
+      return `<li><span class="snap-size">${escapeHtml(f.size_h)}</span><span>${escapeHtml(dt)}</span><span>${escapeHtml(f.name)}</span></li>`;
+    }).join("");
+  } catch {}
+}
+
 function wireUpRecovery() {
-  $$("[data-act=rescan], [data-act=restart], [data-act=restart-admin]").forEach(btn => {
+  // legacy global rescan button
+  $("[data-act=rescan]")?.addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "…";
+    try {
+      const r = await fetch("/api/rescan", { method: "POST" });
+      const j = await r.json();
+      btn.textContent = j.added?.length ? `added ${j.added.length}` : "no new";
+    } catch {
+      btn.textContent = "error";
+    }
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2500);
+  });
+
+  // per-service start / stop / restart
+  $$(".svc-row [data-svc-act]").forEach(btn => {
     btn.addEventListener("click", async () => {
-      const act = btn.dataset.act;
-      if (act === "restart-admin" && !confirm("Restart admin? You'll briefly lose this page.")) return;
+      const row = btn.closest(".svc-row");
+      const unit = row.dataset.svcRow;
+      const act = btn.dataset.svcAct;
+      if (unit === "usb-rtsp-admin" && (act === "stop" || act === "restart")) {
+        const verb = act === "stop" ? "Stop" : "Restart";
+        if (!confirm(`${verb} the admin service? This page will stop responding.`)) return;
+      }
       const orig = btn.textContent;
       btn.disabled = true;
       btn.textContent = "…";
       try {
-        const path = act === "rescan" ? "/api/rescan"
-                   : act === "restart" ? "/api/restart"
-                   : "/api/restart-admin";
-        const r = await fetch(path, { method: "POST" });
+        const r = await fetch(`/api/svc/${unit}/${act}`, { method: "POST" });
         const j = await r.json();
-        btn.textContent = act === "rescan"
-          ? (j.added?.length ? `added ${j.added.length}` : "no new")
-          : (j.ok ? "done" : "failed");
-      } catch (err) {
+        btn.textContent = j.ok || j.scheduled ? "done" : "failed";
+      } catch {
         btn.textContent = "error";
       }
-      setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2500);
+      setTimeout(() => { btn.textContent = orig; btn.disabled = false; refreshSvcRow(row); }, 2000);
     });
   });
 
-  $("[data-act=refresh-logs]")?.addEventListener("click", async () => {
-    const lines = parseInt($("#log-lines").value, 10) || 100;
-    const r = await fetch(`/api/logs?unit=usb-rtsp&lines=${lines}`);
-    const j = await r.json();
-    $("#logs").textContent = j.text || "(empty)";
+  // logs viewer + tail toggle
+  $("[data-act=refresh-logs]")?.addEventListener("click", () => refreshLogs(false));
+  $("#log-unit")?.addEventListener("change", () => refreshLogs(false));
+  $("#log-tail")?.addEventListener("change", (e) => {
+    if (e.target.checked) {
+      logTailTimer = setInterval(() => refreshLogs(true), 2000);
+      refreshLogs(true);
+    } else {
+      if (logTailTimer) clearInterval(logTailTimer);
+      logTailTimer = null;
+      const status = $("#log-status");
+      if (status) { status.classList.remove("tail"); status.textContent = ""; }
+    }
   });
+
+  // snapshots
+  $("[data-act=snap-refresh]")?.addEventListener("click", refreshSnapshots);
+  $("[data-act=snap-cleanup]")?.addEventListener("click", async (e) => {
+    const days = parseInt($("#snap-days").value, 10);
+    if (isNaN(days) || days < 0) return;
+    if (!confirm(`Delete snapshots older than ${days} day(s)?`)) return;
+    const btn = e.currentTarget;
+    const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = "…";
+    try {
+      const r = await fetch(`/api/snapshots/cleanup?older_than_days=${days}`, { method: "POST" });
+      const j = await r.json();
+      btn.textContent = `freed ${j.freed_h} (${j.deleted})`;
+    } catch {
+      btn.textContent = "error";
+    }
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; refreshSnapshots(); }, 2500);
+  });
+  refreshSnapshots();
+  refreshAllSvcRows();
+  setInterval(refreshAllSvcRows, 5000);
 }
 
 // ─── boot ───────────────────────────────────────────────────────────────────
