@@ -103,10 +103,20 @@ def ffmpeg_cmd(cam: dict, profile: dict) -> str:
         codec = "-c:v mjpeg -q:v 3 -huffman default"
     elif encode == "h264":
         bitrate = h264_bitrate(w, h)
+        # -profile baseline + -vf format=yuv420p forces TV-range yuv420p in the
+        # SPS (ffmpeg/libx264 will otherwise tag MJPEG-derived input as
+        # yuvj420p / full-range, which VLC and many phone H.264 decoders
+        # silently reject — the RTSP session opens but no video renders).
+        # -an ensures the SDP advertises no audio track (some players choke
+        # on streams that promise audio but never send any).
         codec = (
+            f"-an "
+            f"-vf format=yuv420p,scale=in_range=full:out_range=tv "
             f"-c:v libx264 -preset ultrafast -tune zerolatency "
-            f"-pix_fmt yuv420p -b:v {bitrate} -maxrate {bitrate} -bufsize {bitrate} "
-            f"-g {fps * 2} -keyint_min {fps}"
+            f"-profile:v baseline -level 3.1 "
+            f"-pix_fmt yuv420p -color_range tv "
+            f"-b:v {bitrate} -maxrate {bitrate} -bufsize {bitrate} "
+            f"-g {fps * 2} -keyint_min {fps} -bf 0"
         )
     else:
         codec = "-c copy"
