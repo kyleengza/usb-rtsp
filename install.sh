@@ -25,10 +25,21 @@ APT_DEPS=(ffmpeg v4l-utils python3-fastapi python3-uvicorn python3-jinja2 python
 # CLI flags
 ENABLE_AUTH=0
 DISABLE_AUTH=0
+LIST_PLUGINS=0
+declare -a ENABLE_PLUGINS=()
+declare -a DISABLE_PLUGINS=()
+NEXT_IS=""
 for arg in "$@"; do
+  if [[ "$NEXT_IS" == "enable-plugin" ]]; then ENABLE_PLUGINS+=("$arg"); NEXT_IS=""; continue; fi
+  if [[ "$NEXT_IS" == "disable-plugin" ]]; then DISABLE_PLUGINS+=("$arg"); NEXT_IS=""; continue; fi
   case "$arg" in
-    --enable-auth)  ENABLE_AUTH=1 ;;
-    --disable-auth) DISABLE_AUTH=1 ;;
+    --enable-auth)        ENABLE_AUTH=1 ;;
+    --disable-auth)       DISABLE_AUTH=1 ;;
+    --list-plugins)       LIST_PLUGINS=1 ;;
+    --enable-plugin)      NEXT_IS="enable-plugin" ;;
+    --disable-plugin)     NEXT_IS="disable-plugin" ;;
+    --enable-plugin=*)    ENABLE_PLUGINS+=("${arg#*=}") ;;
+    --disable-plugin=*)   DISABLE_PLUGINS+=("${arg#*=}") ;;
   esac
 done
 
@@ -38,6 +49,23 @@ warn()  { printf '\033[33m%s\033[0m\n' "$*"; }
 die()   { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 # ── 1. arch check ───────────────────────────────────────────────────────────
+# --list-plugins is a read-only side action — print + exit
+if (( LIST_PLUGINS )); then
+  python3 - <<PYEOF
+import sys
+sys.path.insert(0, "$REPO_DIR")
+from core.loader import discover_plugins, read_enabled_set
+enabled = read_enabled_set()
+for p in discover_plugins():
+    state = "enabled" if p.name in enabled else "disabled"
+    star = "*" if p.default_enabled else " "
+    print(f"  {star} {p.name:12s}  {state:8s}  v{p.version}  {p.description}")
+print()
+print("(* = default_enabled when no plugins-enabled.yml exists)")
+PYEOF
+  exit 0
+fi
+
 arch="$(uname -m)"
 [[ "$arch" == "aarch64" ]] || die "this installer targets aarch64; got $arch (extend if needed)"
 
@@ -100,12 +128,85 @@ fi
 bold "preparing $CONFIG_DIR…"
 mkdir -p "$CONFIG_DIR" "$CONFIG_DIR/snapshots"
 
-if [[ ! -f "$CONFIG_DIR/cameras.yml" ]]; then
-  bold "seeding cameras.yml from auto-detect…"
-  "$REPO_DIR/bin/usb-rtsp-render" --seed-if-missing >/dev/null
-  green "✓ cameras.yml seeded ($(yq -r '.cameras | length' "$CONFIG_DIR/cameras.yml" 2>/dev/null || python3 -c "import yaml,sys; print(len(yaml.safe_load(open(sys.argv[1])).get('cameras', [])))" "$CONFIG_DIR/cameras.yml") cam(s))"
-else
-  green "✓ cameras.yml exists (preserved)"
+# ── 4a. plugin enable/disable list ──────────────────────────────────────────
+PLUGINS_FILE="$CONFIG_DIR/plugins-enabled.yml"
+
+# Bootstrap default-enabled set if the file doesn't exist yet.
+if [[ ! -f "$PLUGINS_FILE" ]]; then
+  python3 - <<PYEOF
+import sys, yaml
+sys.path.insert(0, "$REPO_DIR")
+from core.loader import discover_plugins, write_enabled_set
+defaults = {p.name for p in discover_plugins() if p.default_enabled}
+write_enabled_set(defaults)
+print(f"seeded plugins-enabled.yml with: {sorted(defaults) or '(none)'}")
+PYEOF
+fi
+
+# Apply --enable-plugin / --disable-plugin flags
+if (( ${#ENABLE_PLUGINS[@]} || ${#DISABLE_PLUGINS[@]} )); then
+  python3 - <<PYEOF
+import sys, yaml
+sys.path.insert(0, "$REPO_DIR")
+from core.loader import discover_plugins, read_enabled_set, write_enabled_set
+known = {p.name for p in discover_plugins()}
+enabled = read_enabled_set()
+for name in ${ENABLE_PLUGINS[@]@Q}.split() if False else """${ENABLE_PLUGINS[*]}""".split():
+    if not name: continue
+    if name not in known:
+        print(f"warning: --enable-plugin {name!r}: not found in plugins/", file=sys.stderr)
+        continue
+    enabled.add(name)
+for name in """${DISABLE_PLUGINS[*]}""".split():
+    if not name: continue
+    enabled.discard(name)
+write_enabled_set(enabled)
+print(f"plugins enabled: {sorted(enabled) or '(none)'}")
+PYEOF
+fi
+
+# ── 4b. cameras.yml migration: ~/.config/usb-rtsp/cameras.yml → usb/cameras.yml
+if [[ -f "$CONFIG_DIR/cameras.yml" && ! -f "$CONFIG_DIR/usb/cameras.yml" ]]; then
+  mkdir -p "$CONFIG_DIR/usb"
+  mv "$CONFIG_DIR/cameras.yml" "$CONFIG_DIR/usb/cameras.yml"
+  green "✓ migrated cameras.yml → usb/cameras.yml"
+fi
+
+# ── 4c. seed usb/cameras.yml from auto-detect if absent ────────────────────
+USB_CAMERAS="$CONFIG_DIR/usb/cameras.yml"
+if [[ ! -f "$USB_CAMERAS" ]] && python3 -c "
+import sys; sys.path.insert(0, '$REPO_DIR')
+from core.loader import read_enabled_set
+sys.exit(0 if 'usb' in read_enabled_set() else 1)
+"; then
+  bold "seeding $USB_CAMERAS from auto-detect…"
+  mkdir -p "$CONFIG_DIR/usb"
+  python3 - <<PYEOF
+import sys, json, subprocess, yaml
+sys.path.insert(0, "$REPO_DIR")
+from plugins.usb import detect, render
+detected = {"cameras": detect.discover()}
+cams = []
+for i, c in enumerate(detected.get("cameras", [])):
+    d = c.get("default")
+    if not d: continue
+    cams.append({
+        "name": f"cam{i}",
+        "by_id": c["by_id"],
+        "format": d["format"],
+        "width": d["width"],
+        "height": d["height"],
+        "fps": d["fps"],
+        "encode": render.default_encode(d["format"]),
+        "profile": "balanced",
+        "quality": "medium",
+    })
+open("$USB_CAMERAS", "w").write(yaml.safe_dump({"cameras": cams}, sort_keys=False))
+print(f"seeded {len(cams)} cam(s)")
+PYEOF
+  green "✓ seeded $USB_CAMERAS"
+elif [[ -f "$USB_CAMERAS" ]]; then
+  green "✓ $USB_CAMERAS exists (preserved)"
 fi
 
 # ── auth: opt-in / opt-out ──────────────────────────────────────────────────

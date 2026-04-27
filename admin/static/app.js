@@ -1,12 +1,51 @@
-// usb-rtsp admin panel — vanilla JS, no framework.
-// Polls /api/status, /api/paths, /api/sessions every 3s; wires up form/button actions.
+// usb-rtsp admin panel — core JS.
+// Polls /api/status, /api/sessions, /api/host. Wires up the auth bar,
+// service-recovery row, log viewer, snapshot list. Plugin JS lives in
+// /static/<plugin>/<plugin>.js — those files handle their own per-card
+// behaviour.
 
 const POLL_MS = 3000;
 
 const $ = (sel, ctx = document) => ctx.querySelector(sel);
 const $$ = (sel, ctx = document) => Array.from(ctx.querySelectorAll(sel));
 
-// ─── status header ──────────────────────────────────────────────────────────
+
+// ─── helpers exposed to plugin JS ──────────────────────────────────────────
+
+window.copyText = async function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(text); return true; } catch {}
+  }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  ta.style.pointerEvents = "none";
+  document.body.appendChild(ta);
+  ta.select();
+  ta.setSelectionRange(0, text.length);
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch {}
+  document.body.removeChild(ta);
+  return ok;
+};
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function setBadge(id, kind, text) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove("ok", "warn", "err");
+  el.classList.add(kind);
+  el.textContent = text;
+}
+
+
+// ─── status header ─────────────────────────────────────────────────────────
 
 async function refreshStatus() {
   let s;
@@ -21,56 +60,33 @@ async function refreshStatus() {
     `paths: ${s.paths.ready}/${s.paths.total} ready · ${s.paths.readers} viewers · ↑ ${s.paths.bytes_received_h}`;
 }
 
-function setBadge(id, kind, text) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.classList.remove("ok", "warn", "err");
-  el.classList.add(kind);
-  el.textContent = text;
-}
 
-// ─── per-camera live state ──────────────────────────────────────────────────
+// ─── auth bar ──────────────────────────────────────────────────────────────
 
-async function refreshPaths() {
-  let data;
-  try { data = await fetch("/api/paths").then(r => r.json()); }
-  catch { return; }
-
-  const items = data.items || [];
-  for (const card of $$(".card[data-cam]")) {
-    const name = card.dataset.cam;
-    const item = items.find(p => p.name === name);
-    const dot = $("[data-ready]", card);
-    const readersEl = $("[data-readers]", card);
-    const bytesEl = $("[data-bytes]", card);
-    const upEl = $("[data-uptime]", card);
-
-    if (!item) {
-      dot.classList.remove("ok", "err");
-      readersEl.textContent = "(no path)";
-      bytesEl.textContent = "—";
-      upEl.textContent = "—";
-      continue;
-    }
-    const ready = item.ready === true || item.sourceReady === true;
-    dot.classList.toggle("ok", ready);
-    dot.classList.toggle("err", !ready);
-    readersEl.textContent = `${item.readers_count || 0} viewer${item.readers_count === 1 ? "" : "s"}`;
-    bytesEl.textContent = item.bytesReceived_h || "—";
-    if (item.readyTime) {
-      const dur = (Date.now() - new Date(item.readyTime).getTime()) / 1000;
-      upEl.textContent = formatDuration(dur);
+async function refreshAuthBar() {
+  try {
+    const r = await fetch("/api/auth/state");
+    const j = await r.json();
+    const bar = $("#auth-bar");
+    if (!bar) return;
+    if (j.panel_enabled && j.authenticated) {
+      bar.hidden = false;
+      $("#auth-user").textContent = `${j.user}`;
     } else {
-      upEl.textContent = "—";
+      bar.hidden = true;
     }
-  }
+  } catch {}
 }
+
+
+// ─── active streams table (RTSP / WebRTC / HLS merged) ─────────────────────
 
 async function refreshSessions() {
   let data;
   try { data = await fetch("/api/sessions").then(r => r.json()); }
   catch { return; }
   const tbody = $("#sessions-tbody");
+  if (!tbody) return;
   const items = data.items || [];
   if (!items.length) {
     tbody.innerHTML = '<tr class="empty"><td colspan="8">no active viewers</td></tr>';
@@ -90,316 +106,8 @@ async function refreshSessions() {
   `).join("");
 }
 
-function formatDuration(s) {
-  s = Math.max(0, Math.floor(s));
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
-  return `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
-}
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
-async function waitForPathReady(name, timeoutMs = 12000) {
-  // Poll /api/paths every 400ms until the named path is ready (or timeout).
-  // Used after a save+restart to delay reconnecting the iframe until the
-  // publisher is actually producing again.
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const r = await fetch("/api/paths");
-      if (r.ok) {
-        const d = await r.json();
-        const item = (d.items || []).find(p => p.name === name);
-        if (item && (item.ready === true || item.sourceReady === true)) return true;
-      }
-    } catch {}
-    await new Promise(res => setTimeout(res, 400));
-  }
-  return false;
-}
-
-async function copyText(text) {
-  // Prefer modern API where allowed (HTTPS or localhost).
-  if (navigator.clipboard && window.isSecureContext) {
-    try { await navigator.clipboard.writeText(text); return true; } catch {}
-  }
-  // Fallback for http://lan-ip: hidden textarea + execCommand.
-  const ta = document.createElement("textarea");
-  ta.value = text;
-  ta.setAttribute("readonly", "");
-  ta.style.position = "fixed";
-  ta.style.opacity = "0";
-  ta.style.pointerEvents = "none";
-  document.body.appendChild(ta);
-  ta.select();
-  ta.setSelectionRange(0, text.length);
-  let ok = false;
-  try { ok = document.execCommand("copy"); } catch {}
-  document.body.removeChild(ta);
-  return ok;
-}
-
-// ─── per-camera form: cascading resolution/fps dropdowns ────────────────────
-
-function wireUpCard(card) {
-  const capsEl = $(".caps", card);
-  if (!capsEl) return;
-  let caps;
-  try { caps = JSON.parse(capsEl.textContent); } catch { caps = []; }
-
-  const fmtSel = $("select[name=format]", card);
-  const resSel = $("select[name=resolution]", card);
-  const fpsSel = $("select[name=fps]", card);
-
-  const curRes = resSel.dataset.current; // e.g. "1920x1080"
-  const curFps = parseInt(fpsSel.dataset.current, 10);
-
-  function rebuildRes() {
-    const fmt = fmtSel.value;
-    const fmtRec = caps.find(f => f.format === fmt);
-    if (!fmtRec) return;
-    const opts = fmtRec.sizes.map(s => `${s.width}x${s.height}`);
-    resSel.innerHTML = opts
-      .map(v => `<option value="${v}" ${v === curRes ? "selected" : ""}>${v.replace("x", "×")}</option>`)
-      .join("");
-    if (!opts.includes(resSel.value)) resSel.selectedIndex = 0;
-    rebuildFps();
-  }
-  function rebuildFps() {
-    const fmt = fmtSel.value;
-    const res = resSel.value;
-    const fmtRec = caps.find(f => f.format === fmt);
-    if (!fmtRec) return;
-    const sz = fmtRec.sizes.find(s => `${s.width}x${s.height}` === res);
-    if (!sz) return;
-    fpsSel.innerHTML = sz.fps
-      .map(v => `<option value="${v}" ${v === curFps ? "selected" : ""}>${v} fps</option>`)
-      .join("");
-  }
-
-  fmtSel.addEventListener("change", rebuildRes);
-  resSel.addEventListener("change", rebuildFps);
-
-  if (caps.length) rebuildRes();
-
-  // toggle the MJPEG q:v row visibility based on Encode dropdown
-  const encSel = $("select[name=encode]", card);
-  const mjpegRow = $(".adv-mjpeg", card);
-  function syncMjpegRow() {
-    if (mjpegRow) mjpegRow.classList.toggle("hidden", encSel.value !== "mjpeg");
-  }
-  if (encSel && mjpegRow) {
-    encSel.addEventListener("change", syncMjpegRow);
-    syncMjpegRow();
-  }
-
-  // form submit → POST /api/cam/{name}
-  $("form[data-cam-form]", card).addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const form = e.target;
-    const status = $("[data-form-status]", form);
-    status.className = "form-status";
-    status.textContent = "saving…";
-
-    const fd = new FormData(form);
-    const [w, h] = fd.get("resolution").split("x");
-    // blank advanced inputs → null (server falls back to quality preset)
-    const num = (k) => {
-      const v = (fd.get(k) ?? "").toString().trim();
-      return v === "" ? null : parseInt(v, 10);
-    };
-    const str = (k) => {
-      const v = (fd.get(k) ?? "").toString().trim();
-      return v === "" ? null : v;
-    };
-    const body = {
-      by_id: fd.get("by_id"),
-      format: fd.get("format"),
-      width: parseInt(w, 10),
-      height: parseInt(h, 10),
-      fps: parseInt(fd.get("fps"), 10),
-      encode: fd.get("encode") || "h264",
-      profile: fd.get("profile"),
-      quality: fd.get("quality") || "medium",
-      bitrate_kbps: num("bitrate_kbps"),
-      x264_preset: str("x264_preset"),
-      gop_seconds: num("gop_seconds"),
-      bframes: num("bframes"),
-      mjpeg_qv: num("mjpeg_qv"),
-    };
-
-    const name = card.dataset.cam;
-    try {
-      const r = await fetch(`/api/cam/${name}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
-      status.classList.add("ok");
-      status.textContent = `saved · ${j.reload === "restart" ? "restarting mediamtx…" : `reload: ${j.reload}`}`;
-
-      // After mediamtx restart, poll the API until our path goes ready
-      // (mediamtx is up + the runOnInit ffmpeg has connected). Then reload
-      // the iframe — WebRTC negotiation needs a live publisher behind it.
-      // Without this, the iframe reconnects too early and shows a blank
-      // player until the user manually refreshes.
-      const wrap = $(".preview", card);
-      if (j.reload === "restart") {
-        // Tear down the running iframe instantly — its peerConnection is
-        // about to die anyway, and freeing it now avoids stale UI.
-        if (wrap && !wrap.hidden) {
-          const cur = $("[data-preview-frame]", wrap);
-          if (cur) cur.src = "about:blank";
-        }
-        const ready = await waitForPathReady(name, 15000);
-        if (ready) {
-          // mediamtx reports path ready as soon as the publisher reconnects,
-          // but its WebRTC stack needs another beat to accept WHEP offers.
-          // Settle for 800 ms before re-creating the iframe.
-          await new Promise(res => setTimeout(res, 800));
-          if (wrap && !wrap.hidden) rebuildPreviewIframe(name);
-          status.textContent = "saved · stream ready";
-        } else {
-          status.classList.add("err");
-          status.textContent = "saved, but stream didn't come back in 15 s — try Reconnect, or check logs";
-        }
-        setTimeout(() => { status.textContent = ""; status.className = "form-status"; }, 3000);
-      } else {
-        setTimeout(() => { status.textContent = ""; status.className = "form-status"; }, 3000);
-      }
-    } catch (err) {
-      status.classList.add("err");
-      status.textContent = `error: ${err.message}`;
-    }
-  });
-
-  // snapshot button
-  $("[data-act=snap]", card)?.addEventListener("click", async () => {
-    const name = card.dataset.cam;
-    const img = $(".snap-preview", card);
-    const status = $("[data-form-status]", card);
-    status.className = "form-status";
-    status.textContent = "snapping…";
-    try {
-      const r = await fetch(`/api/cam/${name}/snap`);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const blob = await r.blob();
-      img.src = URL.createObjectURL(blob);
-      img.hidden = false;
-      status.classList.add("ok");
-      status.textContent = "snap saved to ~/.config/usb-rtsp/snapshots/";
-      setTimeout(() => { status.textContent = ""; status.className = "form-status"; }, 3000);
-    } catch (err) {
-      status.classList.add("err");
-      status.textContent = `snap failed: ${err.message}`;
-    }
-  });
-
-  // Replace the preview iframe with a brand-new DOM node — much more
-  // reliable than changing src (no stale peerConnection / cached JS).
-  function rebuildPreviewIframe(camName) {
-    const wrap = $(".preview", card);
-    if (!wrap) return null;
-    const old = $("[data-preview-frame]", wrap);
-    const fresh = document.createElement("iframe");
-    fresh.setAttribute("data-preview-frame", "");
-    fresh.setAttribute("loading", "lazy");
-    fresh.setAttribute("allow", "autoplay");
-    fresh.setAttribute("allowfullscreen", "");
-    // If stream auth is on, embed the credentials so the iframe can
-    // hit mediamtx without a 401 prompt. The panel itself is auth-gated
-    // so this isn't an extra leak.
-    const creds = window.__USB_RTSP_STREAM_CREDS__;
-    const credsAt = creds ? `${encodeURIComponent(creds.user)}:${encodeURIComponent(creds.pass)}@` : "";
-    fresh.src = `http://${credsAt}${location.hostname}:8889/${camName}/?t=${Date.now()}`;
-    if (old) old.replaceWith(fresh); else wrap.appendChild(fresh);
-    return fresh;
-  }
-
-  // live preview toggle (lazy: only loads on demand, never on page open)
-  $("[data-act=preview]", card)?.addEventListener("click", () => {
-    const btn = $("[data-act=preview]", card);
-    const wrap = $(".preview", card);
-    const iframe = $("[data-preview-frame]", card);
-    const isOpen = !wrap.hidden;
-    if (isOpen) {
-      wrap.hidden = true;
-      // tear down the iframe entirely so its WebRTC peerConnection releases
-      const blank = document.createElement("iframe");
-      blank.setAttribute("data-preview-frame", "");
-      blank.setAttribute("loading", "lazy");
-      blank.setAttribute("allow", "autoplay");
-      blank.setAttribute("allowfullscreen", "");
-      iframe.replaceWith(blank);
-      btn.classList.remove("open");
-      btn.textContent = "Live preview ▾";
-    } else {
-      rebuildPreviewIframe(card.dataset.cam);
-      wrap.hidden = false;
-      btn.classList.add("open");
-      btn.textContent = "Hide preview ▴";
-    }
-  });
-
-  // settings toggle (matches the live-preview pattern; collapsed by default)
-  $("[data-act=settings]", card)?.addEventListener("click", () => {
-    const btn = $("[data-act=settings]", card);
-    const wrap = $(".settings-wrap", card);
-    if (!wrap) return;
-    const isOpen = !wrap.hidden;
-    wrap.hidden = isOpen;
-    btn.classList.toggle("open", !isOpen);
-    btn.textContent = isOpen ? "Settings ▾" : "Hide settings ▴";
-  });
-
-  // manual preview reconnect (backstop for cases where the post-save
-  // auto-reconnect doesn't grab the new stream)
-  $("[data-act=preview-reconnect]", card)?.addEventListener("click", () => {
-    rebuildPreviewIframe(card.dataset.cam);
-  });
-
-  // copy URL buttons — navigator.clipboard.writeText() is blocked in
-  // insecure contexts (http://lan-ip), so we fall back to a hidden
-  // textarea + document.execCommand('copy'). Works in every browser
-  // we'd realistically use this panel from.
-  $$(".copy", card).forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const url = btn.dataset.copy;
-      const orig = btn.textContent;
-      const ok = await copyText(url);
-      btn.classList.toggle("ok", ok);
-      btn.textContent = ok ? "copied" : "select+ctrl-c";
-      setTimeout(() => { btn.textContent = orig; btn.classList.remove("ok"); }, 1500);
-    });
-  });
-
-  // kick button
-  $("[data-act=kick]", card)?.addEventListener("click", async () => {
-    const name = card.dataset.cam;
-    const status = $("[data-form-status]", card);
-    status.className = "form-status";
-    status.textContent = "kicking…";
-    try {
-      const r = await fetch(`/api/cam/${name}/restart`, { method: "POST" });
-      const j = await r.json();
-      status.classList.add("ok");
-      status.textContent = j.kicked ? "readers kicked" : `no-op (code ${j.code})`;
-      setTimeout(() => { status.textContent = ""; status.className = "form-status"; }, 3000);
-    } catch (err) {
-      status.classList.add("err");
-      status.textContent = `error: ${err.message}`;
-    }
-  });
-}
-
-// ─── global recovery buttons ────────────────────────────────────────────────
-
-// ─── service recovery ──────────────────────────────────────────────────────
+// ─── service recovery (per-unit row + log viewer + snapshots) ──────────────
 
 let logTailTimer = null;
 
@@ -447,8 +155,7 @@ async function refreshSnapshots() {
   try {
     const r = await fetch("/api/snapshots");
     const j = await r.json();
-    $("[data-snapshots-summary]").textContent =
-      `(${j.count} files · ${j.total_h})`;
+    $("[data-snapshots-summary]").textContent = `(${j.count} files · ${j.total_h})`;
     const ul = $("#snap-list");
     if (!ul) return;
     if (!j.files.length) {
@@ -463,23 +170,7 @@ async function refreshSnapshots() {
 }
 
 function wireUpRecovery() {
-  // legacy global rescan button
-  $("[data-act=rescan]")?.addEventListener("click", async (e) => {
-    const btn = e.currentTarget;
-    const orig = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = "…";
-    try {
-      const r = await fetch("/api/rescan", { method: "POST" });
-      const j = await r.json();
-      btn.textContent = j.added?.length ? `added ${j.added.length}` : "no new";
-    } catch {
-      btn.textContent = "error";
-    }
-    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2500);
-  });
-
-  // per-service start / stop / restart
+  // Per-service start / stop / restart
   $$(".svc-row [data-svc-act]").forEach(btn => {
     btn.addEventListener("click", async () => {
       const row = btn.closest(".svc-row");
@@ -496,14 +187,12 @@ function wireUpRecovery() {
         const r = await fetch(`/api/svc/${unit}/${act}`, { method: "POST" });
         const j = await r.json();
         btn.textContent = j.ok || j.scheduled ? "done" : "failed";
-      } catch {
-        btn.textContent = "error";
-      }
+      } catch { btn.textContent = "error"; }
       setTimeout(() => { btn.textContent = orig; btn.disabled = false; refreshSvcRow(row); }, 2000);
     });
   });
 
-  // logs viewer + tail toggle
+  // Logs
   $("[data-act=refresh-logs]")?.addEventListener("click", () => refreshLogs(false));
   $("#log-unit")?.addEventListener("change", () => refreshLogs(false));
   $("#log-tail")?.addEventListener("change", (e) => {
@@ -518,7 +207,7 @@ function wireUpRecovery() {
     }
   });
 
-  // snapshots
+  // Snapshots
   $("[data-act=snap-refresh]")?.addEventListener("click", refreshSnapshots);
   $("[data-act=snap-cleanup]")?.addEventListener("click", async (e) => {
     const days = parseInt($("#snap-days").value, 10);
@@ -531,9 +220,7 @@ function wireUpRecovery() {
       const r = await fetch(`/api/snapshots/cleanup?older_than_days=${days}`, { method: "POST" });
       const j = await r.json();
       btn.textContent = `freed ${j.freed_h} (${j.deleted})`;
-    } catch {
-      btn.textContent = "error";
-    }
+    } catch { btn.textContent = "error"; }
     setTimeout(() => { btn.textContent = orig; btn.disabled = false; refreshSnapshots(); }, 2500);
   });
   refreshSnapshots();
@@ -541,7 +228,8 @@ function wireUpRecovery() {
   setInterval(refreshAllSvcRows, 5000);
 }
 
-// ─── boot ───────────────────────────────────────────────────────────────────
+
+// ─── host info tiles ───────────────────────────────────────────────────────
 
 async function refreshHost() {
   let h;
@@ -581,32 +269,17 @@ async function refreshHost() {
   set("[data-host-temp]", h.cpu_temp_c != null ? `${h.cpu_temp_c} °C` : "—");
 }
 
-async function refreshAuthBar() {
-  try {
-    const r = await fetch("/api/auth/state");
-    const j = await r.json();
-    const bar = $("#auth-bar");
-    if (!bar) return;
-    if (j.panel_enabled && j.authenticated) {
-      bar.hidden = false;
-      $("#auth-user").textContent = `${j.user}`;
-    } else {
-      bar.hidden = true;
-    }
-  } catch {}
-}
+
+// ─── boot ──────────────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", () => {
-  $$(".card[data-cam]").forEach(wireUpCard);
   wireUpRecovery();
   refreshStatus();
-  refreshPaths();
   refreshSessions();
   refreshHost();
   refreshAuthBar();
   setInterval(() => {
     refreshStatus();
-    refreshPaths();
     refreshSessions();
   }, POLL_MS);
   setInterval(refreshHost, 10000);
