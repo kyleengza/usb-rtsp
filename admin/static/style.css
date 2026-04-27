@@ -43,7 +43,9 @@ header h1 { margin: 0; font-size: 1.2rem; letter-spacing: 0.02em; }
 main { padding: 1rem clamp(1rem, 2.5vw, 3rem); margin: 0 auto; max-width: 100%; }
 section { margin: 1.5rem 0; }
 
-/* Two-pane: cameras left, ops stack on right. */
+/* Two-pane: cameras left, everything else stacked on the right
+   (host → service recovery → active streams). One layout for all
+   wide screens — 2 cols, no 3-col split. */
 @media (min-width: 1000px) {
   main {
     display: grid;
@@ -55,21 +57,8 @@ section { margin: 1.5rem 0; }
   .cameras { grid-column: 1; grid-row: 1 / span 6; }
   .new-cams,
   .host,
-  .streams,
-  .recovery { grid-column: 2; }
-}
-
-/* Very wide (3-column ultrawide / 1440p+):
-   cameras │ active streams (alone) │ host + service recovery */
-@media (min-width: 1700px) {
-  main {
-    grid-template-columns: minmax(0, 5fr) minmax(0, 3fr) minmax(0, 3fr);
-  }
-  .cameras    { grid-column: 1; grid-row: 1 / span 6; }
-  .streams    { grid-column: 2; grid-row: 1 / span 6; }
-  .host       { grid-column: 3; grid-row: 1; }
-  .recovery   { grid-column: 3; grid-row: 2; }
-  .new-cams   { grid-column: 3; grid-row: 3; }
+  .recovery,
+  .streams { grid-column: 2; }
 }
 section > h2 {
   font-size: 1.05rem;
