@@ -32,15 +32,15 @@ SCOPE = Literal["lan", "anywhere", "off"]
 # Ports usb-rtsp owns. Anything outside this list is reported read-only
 # and never modified — that includes SSH, RTP UDP, custom rules, etc.
 MANAGED_PORTS: list[dict] = [
-    {"port": 8080, "proto": "tcp", "label": "Admin panel",     "comment": "usb-rtsp admin",            "default": "lan",      "warn_off": True},
-    {"port": 8554, "proto": "tcp", "label": "RTSP control",    "comment": "rtsp control",              "default": "anywhere"},
-    {"port": 8554, "proto": "udp", "label": "RTSP UDP",        "comment": "rtsp udp control",          "default": "anywhere"},
-    {"port": 8000, "proto": "udp", "label": "RTP media",       "comment": "rtp media (udp xport)",     "default": "anywhere"},
-    {"port": 8001, "proto": "udp", "label": "RTCP",            "comment": "rtcp (udp xport)",          "default": "anywhere"},
-    {"port": 8888, "proto": "tcp", "label": "HLS",             "comment": "usb-rtsp HLS",              "default": "lan"},
-    {"port": 8889, "proto": "tcp", "label": "WebRTC HTTP",     "comment": "usb-rtsp WebRTC HTTP",      "default": "anywhere"},
-    {"port": 8189, "proto": "udp", "label": "WebRTC ICE/UDP",  "comment": "usb-rtsp WebRTC ICE/media", "default": "anywhere"},
-    {"port": 8189, "proto": "tcp", "label": "WebRTC ICE/TCP",  "comment": "usb-rtsp WebRTC ICE/TCP fallback", "default": "anywhere"},
+    {"group": "Admin",  "port": 8080, "proto": "tcp", "label": "Admin panel",    "comment": "usb-rtsp admin",                    "default": "lan",      "warn_off": True},
+    {"group": "RTSP",   "port": 8554, "proto": "tcp", "label": "RTSP control",   "comment": "rtsp control",                      "default": "anywhere"},
+    {"group": "RTSP",   "port": 8554, "proto": "udp", "label": "RTSP UDP",       "comment": "rtsp udp control",                  "default": "anywhere"},
+    {"group": "RTSP",   "port": 8000, "proto": "udp", "label": "RTP media",      "comment": "rtp media (udp xport)",             "default": "anywhere"},
+    {"group": "RTSP",   "port": 8001, "proto": "udp", "label": "RTCP",           "comment": "rtcp (udp xport)",                  "default": "anywhere"},
+    {"group": "HLS",    "port": 8888, "proto": "tcp", "label": "HLS",            "comment": "usb-rtsp HLS",                      "default": "lan"},
+    {"group": "WebRTC", "port": 8889, "proto": "tcp", "label": "WebRTC HTTP",    "comment": "usb-rtsp WebRTC HTTP",              "default": "anywhere"},
+    {"group": "WebRTC", "port": 8189, "proto": "udp", "label": "WebRTC ICE/UDP", "comment": "usb-rtsp WebRTC ICE/media",         "default": "anywhere"},
+    {"group": "WebRTC", "port": 8189, "proto": "tcp", "label": "WebRTC ICE/TCP", "comment": "usb-rtsp WebRTC ICE/TCP fallback",  "default": "anywhere"},
 ]
 
 

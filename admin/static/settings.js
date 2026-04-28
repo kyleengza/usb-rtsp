@@ -439,24 +439,48 @@
       toggleBtn.dataset.action = j.active ? "disable" : "enable";
     }
 
-    // Managed ports table
-    const tbody = document.querySelector("#ufw-managed tbody");
-    if (tbody) {
-      tbody.innerHTML = (j.managed || []).map(m => {
-        const scopes = ["lan", "anywhere", "off"];
-        const pills = scopes.map(sc => {
-          const active = sc === m.scope ? `active scope-${sc}` : "";
-          const dis = j.sudo_ok ? "" : "disabled";
-          return `<button type="button" class="${active}" data-port="${m.port}" data-proto="${m.proto}" data-scope="${sc}" ${dis}>${sc}</button>`;
+    // Managed ports — grouped by purpose (Admin / RTSP / HLS / WebRTC),
+    // each group rendered into its own subtable so you can scan + bulk-flip.
+    const managedHost = document.getElementById("ufw-managed-host");
+    if (managedHost) {
+      const items = j.managed || [];
+      const groups = [];
+      const seen = new Map();
+      for (const m of items) {
+        const g = m.group || "Other";
+        if (!seen.has(g)) {
+          seen.set(g, groups.length);
+          groups.push({ name: g, items: [] });
+        }
+        groups[seen.get(g)].items.push(m);
+      }
+      const dis = j.sudo_ok ? "" : "disabled";
+      managedHost.innerHTML = groups.map(g => {
+        const rows = g.items.map(m => {
+          const scopes = ["lan", "anywhere", "off"];
+          const pills = scopes.map(sc => {
+            const active = sc === m.scope ? `active scope-${sc}` : "";
+            return `<button type="button" class="${active}" data-port="${m.port}" data-proto="${m.proto}" data-scope="${sc}" ${dis}>${sc}</button>`;
+          }).join("");
+          const nums = (m.numbers || []).map(n => `#${n}`).join(", ");
+          const numsCell = nums ? `<span class="hint" style="font-size:0.7rem">rules ${escapeHtml(nums)}</span>` : `<span class="hint" style="font-size:0.7rem">no rule</span>`;
+          return `<tr>
+            <td class="port">${m.port}/${m.proto}<br>${numsCell}</td>
+            <td>${escapeHtml(m.label)}<br><span class="hint" style="font-size:0.7rem">${escapeHtml(m.comment || "")}</span></td>
+            <td><div class="scope-pills">${pills}</div></td>
+            <td>${m.warn_off ? `<span class="hint" style="color:var(--warn)">⚠ panel port</span>` : ""}</td>
+          </tr>`;
         }).join("");
-        const nums = (m.numbers || []).map(n => `#${n}`).join(", ");
-        const numsCell = nums ? `<span class="hint" style="font-size:0.7rem">rules ${escapeHtml(nums)}</span>` : `<span class="hint" style="font-size:0.7rem">no rule</span>`;
-        return `<tr>
-          <td class="port">${m.port}/${m.proto}<br>${numsCell}</td>
-          <td>${escapeHtml(m.label)}<br><span class="hint" style="font-size:0.7rem">${escapeHtml(m.comment || "")}</span></td>
-          <td><div class="scope-pills">${pills}</div></td>
-          <td>${m.warn_off ? `<span class="hint" style="color:var(--warn)">⚠ panel port</span>` : ""}</td>
-        </tr>`;
+        const bulk = ["lan", "anywhere", "off"].map(sc =>
+          `<button type="button" class="" data-ufw-group-bulk="${escapeHtml(g.name)}" data-scope="${sc}" ${dis}>all ${sc}</button>`
+        ).join("");
+        return `<div class="ufw-group" data-ufw-group="${escapeHtml(g.name)}">
+          <div class="ufw-group-head">
+            <span class="ufw-group-title">${escapeHtml(g.name)}</span>
+            <div class="scope-pills ufw-group-bulk">${bulk}</div>
+          </div>
+          <table class="ufw-table"><tbody>${rows}</tbody></table>
+        </div>`;
       }).join("");
     }
 
@@ -603,8 +627,54 @@
     }
   });
 
+  async function setUfwGroupScope(groupName, scope) {
+    const status = document.getElementById("ufw-status");
+    if (!confirm(`Set every ${groupName} port to '${scope}'? You'll see one toggle per port apply.`)) return;
+    if (status) { status.className = "form-status"; status.textContent = `${groupName} → ${scope}…`; }
+    // Pull the current managed list to find which (port, proto) belong to this group.
+    let state;
+    try {
+      state = await fetch("/api/ufw/state").then(r => r.json());
+    } catch (err) {
+      if (status) { status.classList.add("err"); status.textContent = `state fetch failed: ${err.message}`; }
+      return;
+    }
+    const targets = (state.managed || []).filter(m => (m.group || "Other") === groupName);
+    let okCount = 0, errMsg = "";
+    for (const m of targets) {
+      try {
+        const r = await fetch("/api/ufw/port", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ port: m.port, proto: m.proto, scope }),
+        });
+        const j = await r.json();
+        if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
+        okCount++;
+      } catch (err) {
+        errMsg = err.message;
+        break;
+      }
+    }
+    if (status) {
+      if (okCount === targets.length) {
+        status.classList.add("ok");
+        status.textContent = `${groupName} → ${scope} · ${okCount}/${targets.length} applied`;
+      } else {
+        status.classList.add("err");
+        status.textContent = `${groupName}: ${okCount}/${targets.length} applied; stopped at ${errMsg}`;
+      }
+    }
+    loadUfwState();
+  }
+
   document.addEventListener("click", (e) => {
-    const scopeBtn = e.target.closest("#ufw-managed button[data-port]");
+    const bulkBtn = e.target.closest("button[data-ufw-group-bulk]");
+    if (bulkBtn && !bulkBtn.disabled) {
+      setUfwGroupScope(bulkBtn.dataset.ufwGroupBulk, bulkBtn.dataset.scope);
+      return;
+    }
+    const scopeBtn = e.target.closest("#ufw-managed-host button[data-port]");
     if (scopeBtn && !scopeBtn.disabled) {
       const row = scopeBtn.closest("tr");
       const label = row?.querySelector("td:nth-child(2)")?.firstChild?.textContent || "";

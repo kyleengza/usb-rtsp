@@ -360,6 +360,8 @@ def api_sessions() -> JSONResponse:
             continue
         items.append({
             "protocol": "RTSP",
+            "kind": "rtspsessions",
+            "id": s.get("id"),
             "path": s.get("path") or "—",
             "remoteAddr": s.get("remoteAddr") or "—",
             "state": s.get("state") or "—",
@@ -373,6 +375,8 @@ def api_sessions() -> JSONResponse:
     for s in webrtc.get("items", []):
         items.append({
             "protocol": "WebRTC",
+            "kind": "webrtcsessions",
+            "id": s.get("id"),
             "path": s.get("path") or "—",
             "remoteAddr": s.get("remoteAddr") or "—",
             "state": s.get("state") or "—",
@@ -386,6 +390,8 @@ def api_sessions() -> JSONResponse:
     for m in hls.get("items", []):
         items.append({
             "protocol": "HLS",
+            "kind": "hlsmuxers",   # no per-session kick exists for HLS
+            "id": None,
             "path": m.get("path") or "—",
             "remoteAddr": "(HTTP poll)",
             "state": "muxer active",
@@ -396,6 +402,21 @@ def api_sessions() -> JSONResponse:
         })
 
     return JSONResponse({"itemCount": len(items), "items": items})
+
+
+@app.post("/api/sessions/kick")
+async def api_sessions_kick(request: Request) -> JSONResponse:
+    """Kick a single mediamtx session by (kind, id). HLS muxers are stateless
+    segment fetchers — there's no per-session kick for them."""
+    body = await request.json()
+    kind = (body.get("kind") or "").strip()
+    sid  = (body.get("id") or "").strip()
+    if kind not in ("rtspsessions", "webrtcsessions"):
+        raise HTTPException(400, f"unsupported kind: {kind!r}")
+    if not sid:
+        raise HTTPException(400, "id is required")
+    code, _ = api_post(f"/v3/{kind}/kick/{sid}")
+    return JSONResponse({"ok": 200 <= code < 300, "status": code, "kind": kind, "id": sid})
 
 
 @app.get("/api/logs")

@@ -233,9 +233,14 @@ async function refreshSessions() {
   }
   tbody.innerHTML = items.map(s => {
     const ip = _peerIp(s.remoteAddr);
-    const blockBtn = _isBlockableIp(ip)
-      ? `<button type="button" class="danger block-ip-btn" data-block-ip="${escapeHtml(ip)}" title="block ${escapeHtml(ip)} via UFW + kick this session">block</button>`
+    const kickable = (s.kind === "rtspsessions" || s.kind === "webrtcsessions") && !!s.id;
+    const kickBtn = kickable
+      ? `<button type="button" class="kick-session-btn" data-kick-kind="${escapeHtml(s.kind)}" data-kick-id="${escapeHtml(s.id)}" title="terminate this session in mediamtx (firewall untouched)">kick</button>`
       : "";
+    const blockBtn = _isBlockableIp(ip)
+      ? `<button type="button" class="danger block-ip-btn" data-block-ip="${escapeHtml(ip)}" title="UFW deny new connections from ${escapeHtml(ip)} + kick this session">block</button>`
+      : "";
+    const actions = [kickBtn, blockBtn].filter(Boolean).join(" ");
     return `
     <tr>
       <td><span class="proto proto-${escapeHtml((s.protocol || '').toLowerCase())}">${escapeHtml(s.protocol || "—")}</span></td>
@@ -246,10 +251,25 @@ async function refreshSessions() {
       <td class="bytes">${escapeHtml(s.bytesSent_h || "—")}</td>
       <td class="bytes">${escapeHtml(s.bytesReceived_h || "—")}</td>
       <td class="dur">${escapeHtml(s.duration_h || "—")}</td>
-      <td>${blockBtn}</td>
+      <td>${actions}</td>
     </tr>
   `;
   }).join("");
+}
+
+async function kickSession(kind, id) {
+  try {
+    const r = await fetch("/api/sessions/kick", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind, id }),
+    });
+    const j = await r.json();
+    if (!r.ok || !j.ok) throw new Error(j.detail || `HTTP ${r.status} (mediamtx ${j.status})`);
+    refreshSessions();
+  } catch (err) {
+    alert(`kick failed: ${err.message}`);
+  }
 }
 
 async function blockIp(ip, source = "dashboard") {
@@ -269,9 +289,10 @@ async function blockIp(ip, source = "dashboard") {
 }
 
 document.addEventListener("click", (e) => {
-  const btn = e.target.closest(".block-ip-btn[data-block-ip]");
-  if (!btn) return;
-  blockIp(btn.dataset.blockIp);
+  const blk = e.target.closest(".block-ip-btn[data-block-ip]");
+  if (blk) { blockIp(blk.dataset.blockIp); return; }
+  const kk = e.target.closest(".kick-session-btn[data-kick-id]");
+  if (kk) { kickSession(kk.dataset.kickKind, kk.dataset.kickId); }
 });
 
 
@@ -637,7 +658,70 @@ function wireInputToggles() {
 }
 
 
+// ─── dashboard section folding ─────────────────────────────────────────────
+// Each top-level <section> on the dashboard gets a fold button injected
+// next to its <h2>; the rest of the section's content is wrapped in a
+// fold-body div that toggles `hidden`. Runtime DOM mutation, so plugin
+// section templates don't have to know about this.
+
+function makeSectionFoldable(section, opts = {}) {
+  if (section.dataset.foldable === "1") return;
+  const h2 = section.querySelector(":scope > h2");
+  if (!h2) return;
+  section.dataset.foldable = "1";
+
+  const body = document.createElement("div");
+  body.className = "fold-body";
+  let next = h2.nextSibling;
+  while (next) {
+    const tmp = next.nextSibling;
+    body.appendChild(next);
+    next = tmp;
+  }
+  section.appendChild(body);
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "card-tab fold-btn";
+
+  const persistKey = opts.persistKey ? `fold:${opts.persistKey}` : "";
+  let open = opts.defaultOpen !== false;
+  if (persistKey) {
+    try {
+      const saved = localStorage.getItem(persistKey);
+      if (saved === "open")   open = true;
+      if (saved === "closed") open = false;
+    } catch {}
+  }
+
+  function apply() {
+    body.hidden = !open;
+    btn.classList.toggle("open", open);
+    btn.textContent = open ? "Hide ▴" : "Show ▾";
+  }
+  apply();
+
+  btn.addEventListener("click", () => {
+    open = !open;
+    if (persistKey) {
+      try { localStorage.setItem(persistKey, open ? "open" : "closed"); } catch {}
+    }
+    apply();
+  });
+
+  h2.appendChild(btn);
+}
+
+function wireDashboardFolds() {
+  document.querySelectorAll('.plugin-stack > section, .host-stack > section').forEach(section => {
+    const key = section.id || section.classList[0] || section.tagName.toLowerCase();
+    makeSectionFoldable(section, { defaultOpen: true, persistKey: `dash-${key}` });
+  });
+}
+
+
 document.addEventListener("DOMContentLoaded", () => {
+  wireDashboardFolds();
   wireUpRecovery();
   wireInputToggles();
   wireHostToggle();
