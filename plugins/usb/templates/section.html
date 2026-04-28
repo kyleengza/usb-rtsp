@@ -7,7 +7,8 @@
   {% for c in cards %}
   {% set cam = c.config %}
   {% set is_disabled = cam.enabled is defined and not cam.enabled %}
-  <article class="card{% if not c.is_present %} missing{% endif %}{% if is_disabled %} input-disabled{% endif %}" data-cam="{{ cam.name }}" data-plugin="usb">
+  {% set on_demand_default = cam.on_demand if cam.on_demand is defined else True %}
+  <article class="card{% if not c.is_present %} missing{% endif %}{% if is_disabled %} input-disabled{% endif %}" data-cam="{{ cam.name }}" data-plugin="usb" data-on-demand="{{ 'true' if on_demand_default else 'false' }}">
     <header>
       <h3>{{ cam.name }}</h3>
       <span class="ready-dot" data-ready></span>
@@ -130,6 +131,12 @@
             <option value="{{ q }}" {% if q == cur_q %}selected{% endif %}>{{ q.replace('_', ' ') }}</option>
           {% endfor %}
         </select>
+      </label>
+
+      <label class="cam-on-demand">
+        <input type="checkbox" name="on_demand" {% if on_demand_default %}checked{% endif %}>
+        <span>On-demand encode</span>
+        <small>encoder spawns when a viewer connects, stops 10 s after the last leaves. Off = always running (~20% CPU per 720p stream, &lt; 0.5 s first-viewer latency).</small>
       </label>
 
       <details class="advanced">

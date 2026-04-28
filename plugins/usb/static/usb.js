@@ -17,6 +17,7 @@
     const items = data.items || [];
     for (const card of $$('.card[data-plugin="usb"][data-cam]')) {
       const name = card.dataset.cam;
+      const onDemand = card.dataset.onDemand === "true";
       const item = items.find(p => p.name === name);
       const dot = $("[data-ready]", card);
       const readersEl = $("[data-readers]", card);
@@ -29,10 +30,23 @@
         upEl.textContent = "—";
         continue;
       }
-      const ready = item.ready === true || item.sourceReady === true;
-      dot.classList.toggle("ok", ready);
-      dot.classList.toggle("err", !ready);
-      readersEl.textContent = `${item.readers_count || 0} viewer${item.readers_count === 1 ? "" : "s"}`;
+      const ready    = item.ready === true || item.sourceReady === true;
+      const readers  = item.readers_count || 0;
+      // On-demand idle (no viewer + encoder not warm) is the *normal* state:
+      // dot stays neutral, viewer line shows "idle (on-demand)" instead of
+      // a misleading red dot + "0 viewers".
+      dot.classList.remove("ok", "err");
+      if (ready)                                  dot.classList.add("ok");
+      else if (!onDemand || readers > 0)          dot.classList.add("err");
+      // (else: leave bare → CSS shows the muted gray default)
+
+      if (!ready && onDemand && readers === 0) {
+        readersEl.textContent = "idle (on-demand)";
+        bytesEl.textContent   = "—";
+        upEl.textContent      = "—";
+        continue;
+      }
+      readersEl.textContent = `${readers} viewer${readers === 1 ? "" : "s"}`;
       bytesEl.textContent = item.bytesReceived_h || "—";
       if (item.readyTime) {
         const dur = (Date.now() - new Date(item.readyTime).getTime()) / 1000;
@@ -262,6 +276,7 @@
         encode: fd.get("encode") || "h264",
         profile: fd.get("profile"),
         quality: fd.get("quality") || "medium",
+        on_demand: !!fd.get("on_demand"),
         bitrate_kbps: num("bitrate_kbps"),
         x264_preset: str("x264_preset"),
         gop_seconds: num("gop_seconds"),

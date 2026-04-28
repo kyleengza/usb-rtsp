@@ -411,6 +411,20 @@ button.danger:hover { background: var(--err); color: white; }
 .advanced-grid small { color: var(--muted); font-size: 0.7rem; margin-top: 0.15rem; }
 .adv-mjpeg.hidden { display: none; }
 
+/* USB plugin: on-demand checkbox sits as its own row beneath the
+   Format/Resolution/FPS/Encode/Profile/Quality grid. */
+.settings .cam-on-demand {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  color: var(--text);
+}
+.settings .cam-on-demand input[type=checkbox] { margin-top: 0.15rem; }
+.settings .cam-on-demand small { color: var(--muted); flex-basis: 100%; font-size: 0.72rem; line-height: 1.4; }
+
 .native-modes { margin-top: 0.6rem; font-size: 0.8rem; }
 .native-modes summary { cursor: pointer; color: var(--muted); padding: 0.2rem 0; }
 .native-modes summary:hover { color: var(--accent); }

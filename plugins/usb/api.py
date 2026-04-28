@@ -83,6 +83,7 @@ class CamSettings(BaseModel):
     encode: str = "h264"
     profile: str = "balanced"
     quality: str = "medium"
+    on_demand: bool = True
     bitrate_kbps: int | None = Field(default=None, ge=100, le=20000)
     x264_preset: str | None = None
     gop_seconds: int | None = Field(default=None, ge=1, le=10)
@@ -127,6 +128,7 @@ def make_router(ctx) -> APIRouter:
             "name": name, "by_id": body.by_id, "format": body.format,
             "width": body.width, "height": body.height, "fps": body.fps,
             "encode": body.encode, "profile": body.profile, "quality": body.quality,
+            "on_demand": bool(body.on_demand),
         }
         for k in ("bitrate_kbps", "x264_preset", "gop_seconds", "bframes", "mjpeg_qv"):
             v = getattr(body, k)
