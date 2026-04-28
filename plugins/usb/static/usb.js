@@ -80,7 +80,7 @@
     const fresh = document.createElement("iframe");
     fresh.setAttribute("data-preview-frame", "");
     fresh.setAttribute("loading", "lazy");
-    fresh.setAttribute("allow", "autoplay");
+    fresh.setAttribute("allow", "autoplay 'src'");
     fresh.setAttribute("allowfullscreen", "");
     // Iframe loads from the panel's own /preview/<cam>/ proxy. Same-origin
     // (panel cookie covers it), and the panel adds the HTTP Basic header
@@ -181,6 +181,17 @@
         btn.classList.toggle("ok", ok);
         btn.textContent = ok ? "copied" : "select+ctrl-c";
         setTimeout(() => { btn.textContent = orig; btn.classList.remove("ok"); }, 1500);
+      });
+    });
+
+    // QR buttons — pop the shared modal from app.js
+    $$(".qr-btn[data-qr-url]", card).forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (typeof window.showQrModal !== "function") {
+          alert("QR helper not loaded — try a hard refresh (Ctrl+Shift+R).");
+          return;
+        }
+        window.showQrModal(btn.dataset.qrUrl, btn.dataset.qrLabel);
       });
     });
 

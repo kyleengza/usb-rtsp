@@ -17,6 +17,7 @@ import yaml
 
 from . import auth as auth_lib
 from . import compression
+from . import public_ip
 from .helpers import CONFIG_DIR, REPO_DIR
 from .loader import enabled_plugins, render_all_paths, _make_ctx
 
@@ -160,6 +161,7 @@ def build_config() -> dict:
         "webrtcAllowOrigin": "*",
         "webrtcLocalUDPAddress": ":8189",
         **({"webrtcAdditionalHosts": _local_ipv4s()} if _local_ipv4s() else {}),
+        **({"webrtcICEHostNAT1To1IPs": [public_ip.read_cached()]} if public_ip.read_cached() else {}),
         "rtmp": False,
         "srt": False,
         "paths": paths or {},

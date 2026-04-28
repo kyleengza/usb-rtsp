@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>usb-rtsp · settings</title>
+<link rel="icon" type="image/svg+xml" href="/static-core/favicon.svg">
 <link rel="stylesheet" href="/static-core/style.css">
 </head>
 <body>
@@ -19,33 +20,46 @@
     <span class="badge" id="svc-admin">admin —</span>
   </div>
   <div class="auth-bar" id="auth-bar" hidden>
-    <span class="auth-user" id="auth-user">—</span>
-    <form method="post" action="/logout" style="display:inline">
-      <button type="submit" class="logout-btn">Logout</button>
+    <span class="auth-pill" title="logged in user">
+      <svg class="auth-pill-icon" viewBox="0 0 16 16" width="11" height="13" aria-hidden="true">
+        <path fill="currentColor" d="M8 1a3.5 3.5 0 0 0-3.5 3.5V7H4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-.5V4.5A3.5 3.5 0 0 0 8 1zm0 1.5a2 2 0 0 1 2 2V7H6V4.5a2 2 0 0 1 2-2zm0 6.25a1.25 1.25 0 0 1 .417 2.43V13h-.834v-1.82A1.25 1.25 0 0 1 8 8.75z"/>
+      </svg>
+      <span id="auth-user">—</span>
+    </span>
+    <form method="post" action="/logout" class="logout-form">
+      <button type="submit" class="logout-btn">log out</button>
     </form>
   </div>
 </header>
 
 <main class="settings-main">
 
-<div class="plugins-intro">
-  <h2>Plugins</h2>
-  <p class="hint">Toggle to enable/disable. Bundled plugins ship with
-  usb-rtsp; user plugins live at <code>~/.local/share/usb-rtsp/plugins/</code>
-  and can be uninstalled. Re-renders <code>mediamtx.yml</code> and
-  restarts both services on change.</p>
-  <details class="add-plugin">
-    <summary>+ Add plugin ▾</summary>
-    <div class="add-plugin-form">
-      <label>git URL or local path
-        <input type="text" id="add-plugin-source" placeholder="https://github.com/owner/usb-rtsp-plugin-foo  OR  /home/potato/usb-rtsp-foo">
-      </label>
-      <button type="button" data-act="install-plugin">Install</button>
-      <button type="button" data-act="refresh-plugins">Refresh</button>
-    </div>
-  </details>
-  <div class="form-status" id="plugins-status"></div>
-</div>
+{% set _enabled_count  = plugins_meta | selectattr('enabled') | list | length %}
+{% set _disabled_count = plugins_meta | rejectattr('enabled') | list | length %}
+<section class="settings-block" id="plugins-section">
+  <header>
+    <h2>Plugins</h2>
+    <span class="settings-status" data-settings-status="plugins">
+      {{ _enabled_count }} enabled · {{ _disabled_count }} disabled
+    </span>
+    <button type="button" class="card-tab" data-act="fold-block">Details ▾</button>
+  </header>
+  <div class="settings-body" hidden>
+    <p class="hint">Toggle to enable/disable. Bundled plugins ship with
+    usb-rtsp; user plugins live at <code>~/.local/share/usb-rtsp/plugins/</code>
+    and can be uninstalled. Re-renders <code>mediamtx.yml</code> and
+    restarts both services on change.</p>
+    <details class="add-plugin">
+      <summary>+ Add plugin ▾</summary>
+      <div class="add-plugin-form">
+        <label>git URL or local path
+          <input type="text" id="add-plugin-source" placeholder="https://github.com/owner/usb-rtsp-plugin-foo  OR  /home/potato/usb-rtsp-foo">
+        </label>
+        <button type="button" data-act="install-plugin">Install</button>
+        <button type="button" data-act="refresh-plugins">Refresh</button>
+      </div>
+    </details>
+    <div class="form-status" id="plugins-status"></div>
 
 {% for p in plugins_meta %}
 <section class="plugin-block" id="plugin-{{ p.name }}" data-plugin-name="{{ p.name }}">
@@ -110,48 +124,179 @@
 </section>
 {% endfor %}
 
-<section class="auth-section" id="auth-section">
-  <h2>Authentication</h2>
-  <p class="hint">Configured via <code>./install.sh --enable-auth</code>.
-  The panel logs in via PAM (your Pi user). Streams are gated by a
-  shared <code>stream:&lt;password&gt;</code> credential — rotate it
-  here without touching the installer.</p>
-
-  <div class="auth-state" data-auth-state>
-    <span class="badge" id="auth-stream-status">checking…</span>
-  </div>
-
-  <div class="auth-creds" id="auth-creds" hidden>
-    <div class="auth-row">
-      <span class="auth-label">user</span>
-      <code id="stream-user">—</code>
-      <span class="hint">password is server-side only — copy URLs from the dashboard cards</span>
-    </div>
-    <div class="auth-row">
-      <span class="auth-label">rotate</span>
-      <button type="button" class="danger" data-act="rotate-pass">Rotate now</button>
-      <span class="hint">disconnects every active client; dashboard URLs reload automatically</span>
-    </div>
-    <div class="auth-row">
-      <span class="auth-label">auto</span>
-      <label class="switch">
-        <input type="checkbox" id="auto-rotate-toggle">
-        <span class="slider"></span>
-      </label>
-      <select id="auto-rotate-schedule">
-        <option value="daily">daily</option>
-        <option value="weekly" selected>weekly</option>
-        <option value="monthly">monthly</option>
-      </select>
-      <span class="hint">runs <code>usb-rtsp-rotate.timer</code> on this schedule</span>
-    </div>
-    <div class="form-status" id="auth-status"></div>
   </div>
 </section>
 
-<section class="recovery">
-  <h2>Service recovery</h2>
+<section class="settings-block" id="auth-section">
+  <header>
+    <h2>Authentication</h2>
+    <span class="settings-status" data-settings-status="auth">—</span>
+    <button type="button" class="card-tab" data-act="fold-block">Details ▾</button>
+  </header>
+  <div class="settings-body" hidden>
+    <p class="hint">Configured via <code>./install.sh --enable-auth</code>.
+    The panel logs in via PAM (your Pi user). Streams are gated by a
+    shared <code>stream:&lt;password&gt;</code> credential — rotate it
+    here without touching the installer.</p>
 
+    <div class="auth-state" data-auth-state>
+      <span class="badge" id="auth-stream-status">checking…</span>
+    </div>
+
+    <div class="auth-creds" id="auth-creds" hidden>
+      <div class="auth-row">
+        <span class="auth-label">user</span>
+        <code id="stream-user">—</code>
+        <span class="hint">password is server-side only — copy URLs from the dashboard cards</span>
+      </div>
+      <div class="auth-row">
+        <span class="auth-label">rotate</span>
+        <button type="button" class="danger" data-act="rotate-pass">Rotate now</button>
+        <span class="hint">disconnects every active client; dashboard URLs reload automatically</span>
+      </div>
+      <div class="auth-row">
+        <span class="auth-label">auto</span>
+        <label class="switch">
+          <input type="checkbox" id="auto-rotate-toggle">
+          <span class="slider"></span>
+        </label>
+        <select id="auto-rotate-schedule">
+          <option value="daily">daily</option>
+          <option value="weekly" selected>weekly</option>
+          <option value="monthly">monthly</option>
+        </select>
+        <span class="hint">runs <code>usb-rtsp-rotate.timer</code> on this schedule</span>
+      </div>
+      <div class="form-status" id="auth-status"></div>
+    </div>
+  </div>
+</section>
+
+<section class="settings-block" id="webrtc-section">
+  <header>
+    <h2>WebRTC public access</h2>
+    <span class="settings-status" data-settings-status="webrtc">—</span>
+    <button type="button" class="card-tab" data-act="fold-block">Details ▾</button>
+  </header>
+  <div class="settings-body" hidden>
+  <p class="hint">mediamtx advertises ICE host candidates so external
+  WebRTC viewers know how to reach this Pi. Without a routable public
+  IP, only LAN clients connect. The panel auto-detects via
+  <code>curl ifconfig.me</code> on boot and refreshes on a timer; set
+  a DDNS hostname or a static IP below to override.</p>
+
+  <div class="webrtc-state">
+    <div class="auth-row">
+      <span class="auth-label">current</span>
+      <code id="webrtc-current-ip">—</code>
+      <span class="hint" id="webrtc-current-source"></span>
+    </div>
+    <div class="auth-row">
+      <span class="auth-label">last</span>
+      <span class="hint" id="webrtc-last-detected">never</span>
+      <button type="button" id="webrtc-detect-btn">Detect now</button>
+      <span class="hint" id="webrtc-detect-result"></span>
+    </div>
+  </div>
+
+  <form id="webrtc-form" class="webrtc-form">
+    <div class="webrtc-grid">
+      <label>Public hostname / IP
+        <input type="text" id="webrtc-public-host" name="public_host"
+               placeholder="myhouse.duckdns.org or 102.213.127.232 (empty = auto)">
+      </label>
+      <label>IP echo URL
+        <input type="text" id="webrtc-echo-url" name="ip_echo_url"
+               placeholder="https://ifconfig.me">
+      </label>
+      <label>Refresh interval (minutes)
+        <input type="number" id="webrtc-refresh-min" name="refresh_minutes"
+               min="1" max="1440" step="1">
+      </label>
+      <label class="webrtc-toggle-row">
+        <span>Auto-detect</span>
+        <span class="switch">
+          <input type="checkbox" id="webrtc-auto-detect" name="auto_detect">
+          <span class="slider"></span>
+        </span>
+        <span class="hint">when off, only the configured host (if any) is used</span>
+      </label>
+    </div>
+    <div class="webrtc-actions">
+      <button type="submit">Save &amp; re-detect</button>
+      <span class="form-status" id="webrtc-form-status"></span>
+    </div>
+  </form>
+  </div>
+</section>
+
+<section class="settings-block" id="ufw-section">
+  <header>
+    <h2>Firewall (UFW)</h2>
+    <span class="settings-status" data-settings-status="ufw">—</span>
+    <button type="button" class="card-tab" data-act="fold-block">Details ▾</button>
+  </header>
+  <div class="settings-body" hidden>
+  <p class="hint">Per-port scope toggle for the ports usb-rtsp owns.
+  <strong>LAN</strong> = your /24 only · <strong>Anywhere</strong> = open
+  to the internet · <strong>Off</strong> = no rule (default-deny).
+  Other rules (SSH, custom) are listed below read-only.</p>
+
+  <div id="ufw-state" class="webrtc-state">
+    <div class="auth-row">
+      <span class="auth-label">status</span>
+      <span class="badge" id="ufw-status-badge">—</span>
+      <span class="hint" id="ufw-status-hint"></span>
+      <button type="button" id="ufw-toggle-active" hidden>Disable UFW</button>
+      <button type="button" id="ufw-refresh">Refresh</button>
+    </div>
+    <div class="auth-row" id="ufw-sudo-warn" hidden>
+      <span class="auth-label warn">sudo</span>
+      <span class="hint">passwordless sudo for ufw isn't configured — toggles disabled.
+      Run <code>./install.sh --enable-ufw-mgmt</code> from the repo, then reload.</span>
+    </div>
+  </div>
+
+  <table class="ufw-table" id="ufw-managed">
+    <thead>
+      <tr><th>port</th><th>label</th><th>scope</th><th></th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <details class="ufw-other">
+    <summary>Other rules <span class="hint" id="ufw-other-count"></span></summary>
+    <table class="ufw-table">
+      <thead><tr><th>#</th><th>to</th><th>action</th><th>from</th><th>comment</th><th></th></tr></thead>
+      <tbody id="ufw-other-body"></tbody>
+    </table>
+  </details>
+
+  <h3 style="margin:1rem 0 0.4rem; font-size:0.92rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted)">IP blocklist</h3>
+  <p class="hint" style="margin:0 0 0.5rem">Inserted at position 1 so they preempt every allow rule. Loopback, your LAN, and your own IP are server-side guarded.</p>
+  <form id="ufw-block-form" class="auth-row" style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap; margin-bottom:0.5rem">
+    <input type="text" id="ufw-block-source" name="source" placeholder="1.2.3.4 or 1.2.3.0/24"
+           style="flex:1; min-width:14rem; background:#0a0d12; color:var(--text); border:1px solid var(--border); border-radius:4px; padding:0.3rem 0.5rem">
+    <input type="text" id="ufw-block-reason" name="reason" placeholder="reason (optional)"
+           style="flex:1; min-width:10rem; background:#0a0d12; color:var(--text); border:1px solid var(--border); border-radius:4px; padding:0.3rem 0.5rem">
+    <button type="submit">Block</button>
+  </form>
+  <table class="ufw-table" id="ufw-blocks">
+    <thead><tr><th>#</th><th>source</th><th>comment</th><th></th></tr></thead>
+    <tbody id="ufw-blocks-body"></tbody>
+  </table>
+
+  <div class="form-status" id="ufw-status"></div>
+  </div>
+</section>
+
+<section class="settings-block recovery" id="recovery-section">
+  <header>
+    <h2>Service recovery</h2>
+    <span class="settings-status" data-settings-status="recovery">—</span>
+    <button type="button" class="card-tab" data-act="fold-block">Details ▾</button>
+  </header>
+  <div class="settings-body" hidden>
   <div class="svc-grid">
     <div class="svc-row" data-svc-row="usb-rtsp">
       <div class="svc-name">usb-rtsp <span class="svc-sub">(mediamtx)</span></div>
@@ -209,6 +354,7 @@
     </div>
     <pre id="logs">— click Refresh, or tick Live tail —</pre>
   </details>
+  </div>
 </section>
 
 </main>

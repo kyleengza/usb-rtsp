@@ -10,6 +10,8 @@ renders each one's section.html partial.
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import fcntl
 import os
 import subprocess
@@ -29,11 +31,14 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from core import auth as auth_lib
 from core import loader as plugin_loader
+from core import public_ip
+from core import ufw as ufw_lib
 from core.helpers import (
     ALLOWED_UNITS,
     REPO_DIR,
     SNAP_DIR,
     api_get,
+    api_post,
     duration_h,
     fmt_bytes,
     fmt_duration,
@@ -62,7 +67,107 @@ def _make_templates() -> Jinja2Templates:
     return Jinja2Templates(env=env)
 
 
-app = FastAPI(title="usb-rtsp admin")
+def _render_mediamtx_yml() -> tuple[bool, str]:
+    """Run `python3 -m core.renderer` to rewrite ~/.config/usb-rtsp/mediamtx.yml.
+    Returns (ok, message). Used by config-changing endpoints + the
+    public-IP refresher."""
+    p = subprocess.run(
+        ["python3", "-m", "core.renderer"],
+        cwd=str(REPO_DIR),
+        capture_output=True, text=True, timeout=15,
+    )
+    if p.returncode != 0:
+        return False, (p.stdout + p.stderr).strip()
+    return True, ""
+
+
+# ─── public-IP tracking for WebRTC NAT1To1 ─────────────────────────────────
+# Detected at admin startup + refreshed on a timer. When the IP changes we
+# re-render mediamtx.yml and restart mediamtx (skipped if there's an active
+# WebRTC viewer, to avoid kicking them — the next tick will catch up).
+
+WEBRTC_STATE: dict = {
+    "public_ip": None,
+    "source": None,                # "dns" | "http" | None
+    "last_detected_at": None,      # ISO timestamp
+    "last_error": None,
+}
+
+
+def _webrtc_active_session_count() -> int:
+    """How many active WebRTC sessions are connected (via mediamtx API)."""
+    try:
+        d = api_get("/v3/webrtcsessions/list") or {}
+    except Exception:
+        return 0
+    return len(d.get("items") or [])
+
+
+def _refresh_public_ip(force_restart: bool = False) -> dict:
+    """Detect public IP; on change, re-render and (when safe) restart mediamtx."""
+    cfg = (auth_lib.load_config().get("webrtc") or {})
+    prev = public_ip.read_cached()
+    ip, source = public_ip.detect(cfg)
+    now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    if ip:
+        WEBRTC_STATE["public_ip"] = ip
+        WEBRTC_STATE["source"] = source
+        WEBRTC_STATE["last_detected_at"] = now_iso
+        WEBRTC_STATE["last_error"] = None
+    else:
+        WEBRTC_STATE["last_error"] = "all detection methods failed"
+        return {"changed": False, "ip": prev, "source": WEBRTC_STATE["source"], "restarted": False}
+
+    changed = (ip != prev)
+    restarted = False
+    if changed or force_restart:
+        ok, err = _render_mediamtx_yml()
+        if not ok:
+            WEBRTC_STATE["last_error"] = f"render failed: {err}"
+            return {"changed": changed, "ip": ip, "source": source, "restarted": False, "error": err}
+        # Skip the restart if anyone's actively watching via WebRTC.
+        # The new IP is already in the rendered YAML; next non-active
+        # window or any other config-change restart will pick it up.
+        if not force_restart and _webrtc_active_session_count() > 0:
+            return {"changed": changed, "ip": ip, "source": source, "restarted": False, "deferred": "active_viewers"}
+        code, _ = systemctl("restart", "usb-rtsp")
+        restarted = (code == 0)
+    return {"changed": changed, "ip": ip, "source": source, "restarted": restarted}
+
+
+async def _public_ip_refresher() -> None:
+    """Background task: re-detect every refresh_minutes minutes."""
+    while True:
+        try:
+            cfg = (auth_lib.load_config().get("webrtc") or {})
+            mins = max(1, int(cfg.get("refresh_minutes") or 30))
+        except Exception:
+            mins = 30
+        await asyncio.sleep(mins * 60)
+        try:
+            await asyncio.to_thread(_refresh_public_ip)
+        except Exception as e:
+            WEBRTC_STATE["last_error"] = f"refresh: {e}"
+
+
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI):
+    # On startup: prime the cache + state. Don't block startup on render
+    # failure — admin should still come up so the user can fix things.
+    try:
+        await asyncio.to_thread(_refresh_public_ip)
+    except Exception as e:
+        WEBRTC_STATE["last_error"] = f"startup: {e}"
+    task = asyncio.create_task(_public_ip_refresher(), name="public-ip-refresher")
+    try:
+        yield
+    finally:
+        task.cancel()
+        with contextlib.suppress(BaseException):
+            await task
+
+
+app = FastAPI(title="usb-rtsp admin", lifespan=lifespan)
 templates = _make_templates()
 # /static-core/* serves admin/static/. Each plugin's register() mounts its
 # own /static/<name>/ — keeping these on different prefixes avoids the
@@ -82,19 +187,23 @@ PUBLIC_PREFIXES = ("/static/", "/static-core/")
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if not auth_lib.panel_enabled():
+        # Always attempt to derive `request.state.user` from the cookie when
+        # panel auth is on — public endpoints like /api/auth/state need it
+        # to report "who am I" even though they don't gate on it.
+        if auth_lib.panel_enabled():
+            cookie = request.cookies.get(auth_lib.COOKIE_NAME)
+            request.state.user = auth_lib.verify_cookie(cookie)
+        else:
             request.state.user = None
+
+        if not auth_lib.panel_enabled():
             return await call_next(request)
 
         path = request.url.path
         if path in PUBLIC_PATHS or any(path.startswith(p) for p in PUBLIC_PREFIXES):
-            request.state.user = None
             return await call_next(request)
 
-        cookie = request.cookies.get(auth_lib.COOKIE_NAME)
-        user = auth_lib.verify_cookie(cookie)
-        if user:
-            request.state.user = user
+        if request.state.user:
             return await call_next(request)
 
         if path.startswith("/api/"):
@@ -122,6 +231,41 @@ def _plugin_module(name: str):
 
 # ─── dashboard ──────────────────────────────────────────────────────────────
 
+def _primary_lan_ip() -> str:
+    """Best-effort: the IP this Pi would use to reach the internet."""
+    try:
+        r = subprocess.run(
+            ["ip", "-4", "-o", "route", "get", "1.1.1.1"],
+            capture_output=True, text=True, timeout=2,
+        )
+        toks = r.stdout.split()
+        if "src" in toks:
+            return toks[toks.index("src") + 1]
+    except (OSError, ValueError, IndexError):
+        pass
+    return ""
+
+
+def _looks_like_hostname(s: str) -> bool:
+    """Cheap: anything with a letter is a hostname; pure dotted-quad is an IP."""
+    if not s:
+        return False
+    if any(c.isalpha() for c in s):
+        return True
+    return False
+
+
+def _dashboard_host_options() -> dict:
+    """Hosts the URL toggle on the dashboard can switch between."""
+    cfg = (auth_lib.load_config().get("webrtc") or {})
+    configured = (cfg.get("public_host") or "").strip()
+    return {
+        "lan":    _primary_lan_ip() or "",
+        "public": (WEBRTC_STATE.get("public_ip") or public_ip.read_cached() or ""),
+        "dns":    configured if _looks_like_hostname(configured) else "",
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request) -> HTMLResponse:
     creds = auth_lib.stream_credentials()
@@ -136,6 +280,7 @@ def dashboard(request: Request) -> HTMLResponse:
         "stream_user": stream_user,
         "stream_pass": stream_pass,
         "stream_auth": bool(creds),
+        "host_options": _dashboard_host_options(),
     }
 
     # let each plugin contribute its own slice of the template ctx
@@ -1390,3 +1535,186 @@ def api_stream_rotate() -> JSONResponse:
         "password": new_pass,
         "mediamtx_reload": "restart" if code == 0 else "failed",
     })
+
+
+# ─── WebRTC public-IP settings + state ─────────────────────────────────────
+
+@app.get("/api/webrtc/state")
+def api_webrtc_state() -> JSONResponse:
+    cfg = (auth_lib.load_config().get("webrtc") or {})
+    return JSONResponse({
+        "public_ip": WEBRTC_STATE["public_ip"] or public_ip.read_cached(),
+        "source": WEBRTC_STATE["source"],
+        "last_detected_at": WEBRTC_STATE["last_detected_at"],
+        "last_error": WEBRTC_STATE["last_error"],
+        "configured_host": cfg.get("public_host", ""),
+        "ip_echo_url": cfg.get("ip_echo_url", "https://ifconfig.me"),
+        "refresh_minutes": cfg.get("refresh_minutes", 30),
+        "auto_detect": cfg.get("auto_detect", True),
+        "active_webrtc_sessions": _webrtc_active_session_count(),
+    })
+
+
+@app.post("/api/webrtc/detect")
+def api_webrtc_detect() -> JSONResponse:
+    result = _refresh_public_ip(force_restart=False)
+    return JSONResponse(result)
+
+
+# ─── UFW (host firewall) management ────────────────────────────────────────
+
+@app.get("/api/ufw/state")
+def api_ufw_state() -> JSONResponse:
+    s = ufw_lib.status()
+    rules = s.get("rules", [])
+    managed = []
+    for spec in ufw_lib.MANAGED_PORTS:
+        matching = ufw_lib.matching_rules(rules, spec["port"], spec["proto"])
+        managed.append({
+            **spec,
+            "scope":   ufw_lib.detect_scope(rules, spec["port"], spec["proto"]),
+            "numbers": [r.number for r in matching],
+        })
+    other = []
+    managed_keys = {(m["port"], m["proto"]) for m in ufw_lib.MANAGED_PORTS}
+    for r in rules:
+        head = r["to"].split()[0]
+        if "/" in head:
+            try:
+                p, pr = head.split("/", 1)
+                if (int(p), pr) in managed_keys:
+                    continue  # belongs to a managed port; surfaced above
+            except ValueError:
+                pass
+        other.append(r)
+    return JSONResponse({
+        "sudo_ok":   s.get("sudo_ok", False),
+        "active":    s.get("active", False),
+        "lan_cidr":  ufw_lib.lan_cidr(),
+        "managed":   managed,
+        "other":     other,
+        "blocks":    ufw_lib.list_blocks() if s.get("sudo_ok") else [],
+        "raw":       s.get("raw", ""),
+        "error":     s.get("error", ""),
+    })
+
+
+def _kick_sessions_for_ip(ip: str) -> list[dict]:
+    """Kick every active mediamtx session whose remoteAddr starts with ``ip:``.
+    Returns a per-session result list; HLS muxers are skipped (no per-session
+    kick exists for them — they're stateless segment fetches)."""
+    results: list[dict] = []
+    if not ip:
+        return results
+    prefix = ip + ":"
+    for kind in ("rtspsessions", "webrtcsessions"):
+        listing = api_get(f"/v3/{kind}/list") or {"items": []}
+        for s in listing.get("items", []):
+            ra = s.get("remoteAddr") or ""
+            if not ra.startswith(prefix):
+                continue
+            sid = s.get("id")
+            if not sid:
+                continue
+            code, _ = api_post(f"/v3/{kind}/kick/{sid}")
+            results.append({"kind": kind, "id": sid, "remoteAddr": ra, "status": code})
+    return results
+
+
+@app.post("/api/ufw/block")
+async def api_ufw_block(request: Request) -> JSONResponse:
+    body = await request.json()
+    source = (body.get("source") or "").strip()
+    reason = (body.get("reason") or "").strip()
+    if not source:
+        raise HTTPException(400, "source is required")
+    requester_ip = (request.client.host if request.client else "") or ""
+    ok, why = ufw_lib.is_blockable(source, requester_ip=requester_ip)
+    if not ok:
+        raise HTTPException(403, why)
+    comment_parts = ["usb-rtsp block"]
+    if reason:
+        comment_parts.append(reason)
+    result = ufw_lib.block(source, comment=" — ".join(comment_parts))
+    if not result.get("ok"):
+        return JSONResponse(result, status_code=500)
+    # Kick any active sessions from this IP. Best-effort — failures don't roll
+    # back the block; the UFW rule is the actual security boundary.
+    kicked: list[dict] = []
+    src_net = ufw_lib._parse_source(source)
+    if src_net is not None and src_net.num_addresses == 1:
+        kicked = _kick_sessions_for_ip(str(src_net.network_address))
+    return JSONResponse({**result, "kicked": kicked})
+
+
+@app.post("/api/ufw/unblock")
+async def api_ufw_unblock(request: Request) -> JSONResponse:
+    body = await request.json()
+    source = (body.get("source") or "").strip()
+    if not source:
+        raise HTTPException(400, "source is required")
+    result = ufw_lib.unblock(source)
+    if not result.get("ok"):
+        return JSONResponse(result, status_code=500)
+    return JSONResponse(result)
+
+
+@app.post("/api/ufw/delete")
+async def api_ufw_delete(request: Request) -> JSONResponse:
+    body = await request.json()
+    try:
+        number = int(body["number"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(400, "expected {number: int}")
+    return JSONResponse(ufw_lib.delete_rule(number))
+
+
+@app.post("/api/ufw/port")
+async def api_ufw_port(request: Request) -> JSONResponse:
+    body = await request.json()
+    try:
+        port  = int(body["port"])
+        proto = str(body["proto"])
+        scope = str(body["scope"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(400, "expected {port, proto, scope}")
+    spec = next((m for m in ufw_lib.MANAGED_PORTS if m["port"] == port and m["proto"] == proto), None)
+    if not spec:
+        raise HTTPException(403, f"{port}/{proto} is not a managed port")
+    result = ufw_lib.set_port_scope(port, proto, scope, comment=spec.get("comment", ""))
+    if not result.get("ok"):
+        return JSONResponse(result, status_code=500)
+    return JSONResponse(result)
+
+
+@app.post("/api/ufw/enable")
+def api_ufw_enable() -> JSONResponse:
+    return JSONResponse(ufw_lib.set_ufw_enabled(True))
+
+
+@app.post("/api/ufw/disable")
+def api_ufw_disable() -> JSONResponse:
+    return JSONResponse(ufw_lib.set_ufw_enabled(False))
+
+
+@app.post("/api/webrtc/settings")
+async def api_webrtc_settings(request: Request) -> JSONResponse:
+    body = await request.json()
+    cfg = auth_lib.load_config()
+    cfg.setdefault("webrtc", {})
+    if "public_host" in body:
+        cfg["webrtc"]["public_host"] = (body.get("public_host") or "").strip()
+    if "ip_echo_url" in body:
+        cfg["webrtc"]["ip_echo_url"] = (body.get("ip_echo_url") or "https://ifconfig.me").strip()
+    if "refresh_minutes" in body:
+        try:
+            cfg["webrtc"]["refresh_minutes"] = max(1, int(body["refresh_minutes"]))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "refresh_minutes must be a positive integer")
+    if "auto_detect" in body:
+        cfg["webrtc"]["auto_detect"] = bool(body["auto_detect"])
+    auth_lib.AUTH_YML.parent.mkdir(parents=True, exist_ok=True)
+    auth_lib.AUTH_YML.write_text(yaml.safe_dump(cfg, sort_keys=False))
+    # Trigger re-detect so the new settings take effect immediately.
+    result = _refresh_public_ip(force_restart=False)
+    return JSONResponse({"saved": True, **result})

@@ -12,6 +12,110 @@ const $$ = (sel, ctx = document) => Array.from(ctx.querySelectorAll(sel));
 
 // ─── helpers exposed to plugin JS ──────────────────────────────────────────
 
+// QR-code modal — vendored qrcode-generator (window.qrcode) renders an SVG
+// for the URL the user already sees on screen. Plugin JS calls
+// window.showQrModal(url, label) from per-row buttons; the modal is
+// lazy-built once and reused.
+window.showQrModal = function showQrModal(url, label) {
+  if (typeof window.qrcode !== "function") {
+    alert("QR library not loaded — try a hard refresh (Ctrl+Shift+R).");
+    return;
+  }
+  let modal = document.getElementById("qr-modal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "qr-modal";
+    modal.hidden = true;
+    modal.innerHTML = `
+      <div class="qr-modal-backdrop" data-qr-close></div>
+      <div class="qr-modal-card" role="dialog" aria-modal="true" aria-labelledby="qr-modal-label">
+        <div class="qr-modal-head">
+          <span class="qr-modal-label" id="qr-modal-label"></span>
+          <button type="button" class="qr-modal-close" data-qr-close aria-label="close">×</button>
+        </div>
+        <div class="qr-modal-svg"></div>
+        <div class="qr-modal-url"></div>
+        <div class="qr-modal-hint">scan with your phone's camera or RTSP/HLS app</div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    const close = () => { modal.hidden = true; };
+    modal.querySelectorAll("[data-qr-close]").forEach(el => el.addEventListener("click", close));
+    document.addEventListener("keydown", e => {
+      if (!modal.hidden && e.key === "Escape") close();
+    });
+  }
+  // QR cell-size scales inversely with payload — mediamtx URLs with
+  // creds can be ~80 chars, default cellSize=4 keeps total ~250px.
+  let qr;
+  try {
+    qr = window.qrcode(0, "M");
+    qr.addData(url);
+    qr.make();
+  } catch (err) {
+    alert("QR encode failed: " + (err && err.message ? err.message : err));
+    return;
+  }
+  modal.querySelector(".qr-modal-svg").innerHTML = qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true });
+  modal.querySelector(".qr-modal-label").textContent = label || "URL";
+  modal.querySelector(".qr-modal-url").textContent = url;
+  modal.hidden = false;
+};
+
+
+// ─── URL host mode (LAN / Public / DNS) ────────────────────────────────────
+// Each URL row carries data-url-pre + data-url-suf; the host fills the gap.
+// Switching mode rebuilds the visible <code>, the copy button's data-copy,
+// and the QR button's data-qr-url in place.
+
+const HOST_MODE_KEY = "usb-rtsp-host-mode";
+
+function applyHostMode(mode) {
+  const hosts = window.__USB_RTSP_HOSTS__ || {};
+  const host = hosts[mode];
+  if (!host) return false;
+  document.querySelectorAll(".url-row[data-url-pre]").forEach(li => {
+    const pre = li.dataset.urlPre || "";
+    const suf = li.dataset.urlSuf || "";
+    const url = pre + host + suf;
+    const codeEl = li.querySelector("[data-url-display]") || li.querySelector("code");
+    if (codeEl) codeEl.textContent = url;
+    const copyBtn = li.querySelector(".copy[data-copy]");
+    if (copyBtn) copyBtn.dataset.copy = url;
+    const qrBtn = li.querySelector(".qr-btn[data-qr-url]");
+    if (qrBtn) qrBtn.dataset.qrUrl = url;
+  });
+  document.querySelectorAll("#host-toggle button[data-host-mode]").forEach(b => {
+    b.classList.toggle("active", b.dataset.hostMode === mode);
+  });
+  try { localStorage.setItem(HOST_MODE_KEY, mode); } catch {}
+  return true;
+}
+
+function initialHostMode() {
+  const hosts = window.__USB_RTSP_HOSTS__ || {};
+  let saved = null;
+  try { saved = localStorage.getItem(HOST_MODE_KEY); } catch {}
+  if (saved && hosts[saved]) return saved;
+  const cur = hosts.current;
+  for (const m of ["lan", "public", "dns"]) {
+    if (hosts[m] && hosts[m] === cur) return m;
+  }
+  for (const m of ["lan", "public", "dns"]) {
+    if (hosts[m]) return m;
+  }
+  return null;
+}
+
+function wireHostToggle() {
+  const buttons = document.querySelectorAll("#host-toggle button[data-host-mode]");
+  if (!buttons.length) return;
+  buttons.forEach(b => b.addEventListener("click", () => applyHostMode(b.dataset.hostMode)));
+  const m = initialHostMode();
+  if (m) applyHostMode(m);
+}
+
+
 window.copyText = async function copyText(text) {
   if (navigator.clipboard && window.isSecureContext) {
     try { await navigator.clipboard.writeText(text); return true; } catch {}
@@ -56,8 +160,11 @@ async function refreshStatus() {
            `mediamtx ${s.services.mediamtx}`);
   setBadge("svc-admin", s.services.admin === "active" ? "ok" : "warn",
            `admin ${s.services.admin}`);
-  $("#agg").textContent =
-    `paths: ${s.paths.ready}/${s.paths.total} ready · ${s.paths.readers} viewers · ↑ ${s.paths.bytes_received_h}`;
+  const agg = $("#agg");
+  if (agg) {
+    agg.textContent =
+      `paths: ${s.paths.ready}/${s.paths.total} ready · ${s.paths.readers} viewers · ↑ ${s.paths.bytes_received_h}`;
+  }
 }
 
 
@@ -81,6 +188,38 @@ async function refreshAuthBar() {
 
 // ─── active streams table (RTSP / WebRTC / HLS merged) ─────────────────────
 
+// Pull just the IP out of "1.2.3.4:55678" / "[::1]:80" / "(HTTP poll)".
+// Returns "" if not a real IP — used to gate the per-row block button.
+function _peerIp(remoteAddr) {
+  if (!remoteAddr || remoteAddr.startsWith("(")) return "";
+  if (remoteAddr.startsWith("[")) {
+    const close = remoteAddr.indexOf("]");
+    return close > 0 ? remoteAddr.slice(1, close) : "";
+  }
+  const colon = remoteAddr.lastIndexOf(":");
+  return colon > 0 ? remoteAddr.slice(0, colon) : remoteAddr;
+}
+
+// True if the IP is something we'd let the user block. Mirrors the
+// server-side is_blockable check well enough to hide the button on
+// loopback / LAN / own-IP — the server still re-validates.
+function _isBlockableIp(ip) {
+  if (!ip) return false;
+  if (ip.startsWith("127.") || ip === "::1") return false;
+  const hosts = window.__USB_RTSP_HOSTS__ || {};
+  if (hosts.lan && ip === hosts.lan) return false;       // self
+  if (hosts.lan) {
+    // Same /24 as the LAN — don't offer block button.
+    const parts = ip.split(".");
+    const lanParts = hosts.lan.split(".");
+    if (parts.length === 4 && lanParts.length === 4
+        && parts[0] === lanParts[0] && parts[1] === lanParts[1] && parts[2] === lanParts[2]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 async function refreshSessions() {
   let data;
   try { data = await fetch("/api/sessions").then(r => r.json()); }
@@ -89,10 +228,15 @@ async function refreshSessions() {
   if (!tbody) return;
   const items = data.items || [];
   if (!items.length) {
-    tbody.innerHTML = '<tr class="empty"><td colspan="8">no active viewers</td></tr>';
+    tbody.innerHTML = '<tr class="empty"><td colspan="9">no active viewers</td></tr>';
     return;
   }
-  tbody.innerHTML = items.map(s => `
+  tbody.innerHTML = items.map(s => {
+    const ip = _peerIp(s.remoteAddr);
+    const blockBtn = _isBlockableIp(ip)
+      ? `<button type="button" class="danger block-ip-btn" data-block-ip="${escapeHtml(ip)}" title="block ${escapeHtml(ip)} via UFW + kick this session">block</button>`
+      : "";
+    return `
     <tr>
       <td><span class="proto proto-${escapeHtml((s.protocol || '').toLowerCase())}">${escapeHtml(s.protocol || "—")}</span></td>
       <td>${escapeHtml(s.path || "—")}</td>
@@ -102,9 +246,33 @@ async function refreshSessions() {
       <td class="bytes">${escapeHtml(s.bytesSent_h || "—")}</td>
       <td class="bytes">${escapeHtml(s.bytesReceived_h || "—")}</td>
       <td class="dur">${escapeHtml(s.duration_h || "—")}</td>
+      <td>${blockBtn}</td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
 }
+
+async function blockIp(ip, source = "dashboard") {
+  if (!confirm(`Block ${ip}? UFW will deny new connections from this IP and any active sessions will be kicked.`)) return;
+  try {
+    const r = await fetch("/api/ufw/block", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source: ip, reason: source }),
+    });
+    const j = await r.json();
+    if (!r.ok || j.ok === false) throw new Error(j.detail || j.error || `HTTP ${r.status}`);
+    refreshSessions();
+  } catch (err) {
+    alert(`block ${ip} failed: ${err.message}`);
+  }
+}
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".block-ip-btn[data-block-ip]");
+  if (!btn) return;
+  blockIp(btn.dataset.blockIp);
+});
 
 
 // ─── service recovery (per-unit row + log viewer + snapshots) ──────────────
@@ -130,6 +298,17 @@ async function refreshSvcRow(row) {
 
 async function refreshAllSvcRows() {
   $$(".svc-row").forEach(refreshSvcRow);
+  // Compose a one-line summary for the foldable Service-recovery card header.
+  setTimeout(() => {
+    const states = $$(".svc-row [data-svc-state]").map(el => el.textContent);
+    const target = document.querySelector('[data-settings-status="recovery"]');
+    if (!target) return;
+    if (!states.length) { target.textContent = "—"; return; }
+    const allOk = states.every(t => t.includes("active"));
+    target.textContent = allOk ? `all ${states.length} active` : states.join(" · ");
+    target.classList.toggle("ok", allOk);
+    target.classList.toggle("err", !allOk);
+  }, 250);
 }
 
 async function refreshLogs(announceTail = false) {
@@ -383,6 +562,37 @@ async function refreshHost() {
 }
 
 
+// ─── WebRTC public-access tile ────────────────────────────────────────────
+
+async function refreshWebrtcPublic() {
+  let j;
+  try { j = await fetch("/api/webrtc/state").then(r => r.json()); } catch { return; }
+  const set = (sel, val) => { const el = document.querySelector(sel); if (el) el.textContent = val; };
+  const showCard = (name, on) => {
+    const el = document.querySelector(`[data-hardware-card="${name}"]`);
+    if (el) el.hidden = !on;
+  };
+  // Hide the card on bare LAN-only setups where neither auto-detect nor a
+  // configured host produced a public IP.
+  if (!j.public_ip && !j.configured_host) {
+    showCard("webrtc-public", false);
+    return;
+  }
+  showCard("webrtc-public", true);
+  set("[data-webrtc-public-ip]", j.public_ip || "(none yet)");
+  const srcLabel = j.source ? `via ${j.source.toUpperCase()}` : (j.last_error ? `error: ${j.last_error}` : "—");
+  const cfg = j.configured_host ? ` · cfg ${j.configured_host}` : "";
+  set("[data-webrtc-public-source]", srcLabel + cfg);
+  if (j.last_detected_at) {
+    const s = Math.max(0, Math.floor((Date.now() - new Date(j.last_detected_at).getTime()) / 1000));
+    const ago = s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s/60)}m` : `${Math.floor(s/3600)}h`;
+    set("[data-webrtc-public-detected]", `${ago} ago`);
+  } else {
+    set("[data-webrtc-public-detected]", "never");
+  }
+}
+
+
 // ─── boot ──────────────────────────────────────────────────────────────────
 
 // ─── per-input enable/disable (cameras, relay sources, ...) ───────────────
@@ -430,13 +640,16 @@ function wireInputToggles() {
 document.addEventListener("DOMContentLoaded", () => {
   wireUpRecovery();
   wireInputToggles();
+  wireHostToggle();
   refreshStatus();
   refreshSessions();
   refreshHost();
   refreshAuthBar();
+  refreshWebrtcPublic();
   setInterval(() => {
     refreshStatus();
     refreshSessions();
   }, POLL_MS);
   setInterval(refreshHost, 10000);
+  setInterval(refreshWebrtcPublic, 30000);
 });

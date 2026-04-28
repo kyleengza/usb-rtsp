@@ -97,20 +97,27 @@
     });
   });
 
-  // ─── plugin block fold/unfold ──────────────────────────────────────────
+  // ─── foldable block (plugins + settings sections) ──────────────────────
+  // A "block" is any element matching .plugin-block or .settings-block with
+  // an inner .plugin-body or .settings-body. The header carries either
+  // [data-act=fold-plugin] (legacy) or [data-act=fold-block] as the toggle.
+  const BLOCK_SEL = '.plugin-block, .settings-block';
+  const BODY_SEL  = '.plugin-body, .settings-body';
+  const FOLD_SEL  = '[data-act=fold-plugin], [data-act=fold-block]';
+
   function setPluginFold(block, open) {
-    const body = block?.querySelector('.plugin-body');
-    const btn  = block?.querySelector('[data-act=fold-plugin]');
+    const body = block?.querySelector(BODY_SEL);
+    const btn  = block?.querySelector(FOLD_SEL);
     if (!body || !btn) return;
     body.hidden = !open;
     btn.classList.toggle("open", open);
     btn.textContent = open ? "Hide ▴" : "Details ▾";
   }
 
-  $$('[data-act=fold-plugin]').forEach(btn => {
+  $$(FOLD_SEL).forEach(btn => {
     btn.addEventListener("click", () => {
-      const block = btn.closest('.plugin-block');
-      const body = block?.querySelector('.plugin-body');
+      const block = btn.closest(BLOCK_SEL);
+      const body = block?.querySelector(BODY_SEL);
       if (!body) return;
       setPluginFold(block, body.hidden);
     });
@@ -118,11 +125,15 @@
 
   // Open the targeted plugin block when /settings is loaded with a
   // hash like #plugin-relay (e.g. follow the dashboard "no relays" hint).
+  // Plugin cards are nested inside the Plugins settings-block now, so we
+  // also have to unfold that parent first.
   function openPluginByHash() {
     const m = location.hash.match(/^#plugin-([a-z0-9_-]+)$/i);
     if (!m) return;
     const block = document.getElementById(`plugin-${m[1]}`);
     if (block) {
+      const parent = block.closest('.settings-block');
+      if (parent && parent !== block) setPluginFold(parent, true);
       setPluginFold(block, true);
       block.scrollIntoView({ behavior: "smooth", block: "start" });
     }
@@ -139,6 +150,14 @@
   // The settings card just shows the username, a manual Rotate button,
   // and the auto-rotate timer toggle.
 
+  function setSettingsStatus(name, text, kind) {
+    const el = document.querySelector(`[data-settings-status="${name}"]`);
+    if (!el) return;
+    el.textContent = text;
+    el.classList.remove("ok", "warn", "err");
+    if (kind) el.classList.add(kind);
+  }
+
   async function loadStreamCreds() {
     try {
       const r = await fetch("/api/auth/stream-credentials");
@@ -148,13 +167,17 @@
       if (!j.enabled) {
         status.classList.add("warn");
         status.textContent = "stream auth disabled";
+        setSettingsStatus("auth", "stream auth off", "warn");
         return;
       }
       status.classList.add("ok");
       status.textContent = "stream auth enabled";
       $("#stream-user").textContent = j.user;
       creds.hidden = false;
-    } catch {}
+      setSettingsStatus("auth", `${j.user} · stream auth on`, "ok");
+    } catch {
+      setSettingsStatus("auth", "fetch failed", "err");
+    }
   }
 
   async function loadAutoRotateState() {
@@ -251,7 +274,377 @@
     }
   });
 
+  // ─── WebRTC public access ─────────────────────────────────────────────
+
+  function fmtAgo(iso) {
+    if (!iso) return "never";
+    const t = Date.parse(iso);
+    if (isNaN(t)) return "—";
+    const s = Math.max(0, Math.floor((Date.now() - t) / 1000));
+    if (s < 60)   return `${s}s ago`;
+    if (s < 3600) return `${Math.floor(s/60)}m${s%60 ? ` ${s%60}s` : ""} ago`;
+    return `${Math.floor(s/3600)}h${Math.floor((s%3600)/60)}m ago`;
+  }
+
+  function setVal(id, v) {
+    const el = document.getElementById(id);
+    if (el) el.value = v == null ? "" : v;
+  }
+  function setText(id, v) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = v;
+  }
+  function setChecked(id, v) {
+    const el = document.getElementById(id);
+    if (el) el.checked = !!v;
+  }
+  function getVal(id, fallback = "") {
+    const el = document.getElementById(id);
+    return el ? el.value : fallback;
+  }
+  function getChecked(id) {
+    const el = document.getElementById(id);
+    return el ? !!el.checked : false;
+  }
+
+  async function loadWebrtcState() {
+    if (!document.getElementById("webrtc-current-ip")) return;  // not on this page
+    let j;
+    try {
+      const r = await fetch("/api/webrtc/state");
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      j = await r.json();
+    } catch (err) {
+      setText("webrtc-current-ip", "—");
+      setText("webrtc-current-source", `state fetch failed: ${err.message}`);
+      return;
+    }
+    setText("webrtc-current-ip", j.public_ip || "(none yet)");
+    setText("webrtc-current-source",
+      j.source ? `via ${String(j.source).toUpperCase()}` : (j.last_error || ""));
+    setSettingsStatus(
+      "webrtc",
+      j.public_ip ? `${j.public_ip} · ${j.source || "—"}` : "no public IP",
+      j.public_ip ? "ok" : "warn",
+    );
+    const sessions = j.active_webrtc_sessions || 0;
+    setText("webrtc-last-detected",
+      `last detected ${fmtAgo(j.last_detected_at)} · ${sessions} active session${sessions === 1 ? "" : "s"}`);
+    setVal("webrtc-public-host", j.configured_host || "");
+    setVal("webrtc-echo-url",    j.ip_echo_url    || "https://ifconfig.me");
+    setVal("webrtc-refresh-min", j.refresh_minutes || 30);
+    setChecked("webrtc-auto-detect", j.auto_detect !== false);
+  }
+
+  const detectBtn = document.getElementById("webrtc-detect-btn");
+  if (detectBtn) {
+    detectBtn.addEventListener("click", async () => {
+      const result = document.getElementById("webrtc-detect-result");
+      detectBtn.disabled = true;
+      if (result) result.textContent = "detecting…";
+      try {
+        const r = await fetch("/api/webrtc/detect", { method: "POST" });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+        const parts = [`got ${j.ip || "(none)"}`];
+        if (j.changed)   parts.push("changed");
+        if (j.restarted) parts.push("mediamtx restarted");
+        if (j.deferred === "active_viewers") parts.push("restart deferred (viewers active)");
+        if (result) result.textContent = parts.join(" · ");
+      } catch (err) {
+        if (result) result.textContent = `error: ${err.message}`;
+      } finally {
+        detectBtn.disabled = false;
+        loadWebrtcState();
+      }
+    });
+  }
+
+  const webrtcForm = document.getElementById("webrtc-form");
+  if (webrtcForm) {
+    webrtcForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const status = document.getElementById("webrtc-form-status");
+      if (status) { status.className = "form-status"; status.textContent = "saving…"; }
+      const body = {
+        public_host:     getVal("webrtc-public-host").trim(),
+        ip_echo_url:     getVal("webrtc-echo-url").trim() || "https://ifconfig.me",
+        refresh_minutes: parseInt(getVal("webrtc-refresh-min"), 10) || 30,
+        auto_detect:     getChecked("webrtc-auto-detect"),
+      };
+      try {
+        const r = await fetch("/api/webrtc/settings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+        const parts = ["saved"];
+        if (j.ip) parts.push(`ip=${j.ip}`);
+        if (j.changed)   parts.push("changed");
+        if (j.restarted) parts.push("mediamtx restarted");
+        if (j.deferred === "active_viewers") parts.push("restart deferred (viewers active)");
+        if (status) { status.classList.add("ok"); status.textContent = parts.join(" · "); }
+        loadWebrtcState();
+      } catch (err) {
+        if (status) { status.classList.add("err"); status.textContent = `error: ${err.message}`; }
+      }
+    });
+  }
+
+  // ─── UFW (firewall) management ───────────────────────────────────────
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  async function loadUfwState() {
+    if (!document.getElementById("ufw-section")) return;
+    let j;
+    try {
+      const r = await fetch("/api/ufw/state");
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      j = await r.json();
+    } catch (err) {
+      setText("ufw-status-hint", `state fetch failed: ${err.message}`);
+      return;
+    }
+    const badge = document.getElementById("ufw-status-badge");
+    if (badge) {
+      badge.classList.remove("ok", "warn", "err");
+      if (!j.sudo_ok) {
+        badge.classList.add("warn"); badge.textContent = "sudo missing";
+      } else if (j.active) {
+        badge.classList.add("ok"); badge.textContent = "active";
+      } else {
+        badge.classList.add("err"); badge.textContent = "inactive";
+      }
+    }
+    if (!j.sudo_ok) {
+      setSettingsStatus("ufw", "sudo not configured", "warn");
+    } else {
+      const blocks = (j.blocks || []).length;
+      const summary = `${j.active ? "active" : "inactive"} · ${(j.managed || []).length} managed${blocks ? ` · ${blocks} blocked` : ""}`;
+      setSettingsStatus("ufw", summary, j.active ? "ok" : "err");
+    }
+    setText("ufw-status-hint", j.lan_cidr ? `LAN scope = ${j.lan_cidr}` : "LAN CIDR unknown");
+    document.getElementById("ufw-sudo-warn").hidden = !!j.sudo_ok;
+
+    const toggleBtn = document.getElementById("ufw-toggle-active");
+    if (toggleBtn) {
+      toggleBtn.hidden = !j.sudo_ok;
+      toggleBtn.textContent = j.active ? "Disable UFW" : "Enable UFW";
+      toggleBtn.dataset.action = j.active ? "disable" : "enable";
+    }
+
+    // Managed ports table
+    const tbody = document.querySelector("#ufw-managed tbody");
+    if (tbody) {
+      tbody.innerHTML = (j.managed || []).map(m => {
+        const scopes = ["lan", "anywhere", "off"];
+        const pills = scopes.map(sc => {
+          const active = sc === m.scope ? `active scope-${sc}` : "";
+          const dis = j.sudo_ok ? "" : "disabled";
+          return `<button type="button" class="${active}" data-port="${m.port}" data-proto="${m.proto}" data-scope="${sc}" ${dis}>${sc}</button>`;
+        }).join("");
+        const nums = (m.numbers || []).map(n => `#${n}`).join(", ");
+        const numsCell = nums ? `<span class="hint" style="font-size:0.7rem">rules ${escapeHtml(nums)}</span>` : `<span class="hint" style="font-size:0.7rem">no rule</span>`;
+        return `<tr>
+          <td class="port">${m.port}/${m.proto}<br>${numsCell}</td>
+          <td>${escapeHtml(m.label)}<br><span class="hint" style="font-size:0.7rem">${escapeHtml(m.comment || "")}</span></td>
+          <td><div class="scope-pills">${pills}</div></td>
+          <td>${m.warn_off ? `<span class="hint" style="color:var(--warn)">⚠ panel port</span>` : ""}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    // Blocklist table — DENY-from-<X> entries (no port restriction).
+    const blocksBody = document.getElementById("ufw-blocks-body");
+    if (blocksBody) {
+      const blocks = j.blocks || [];
+      blocksBody.innerHTML = blocks.length
+        ? blocks.map(b => `<tr>
+            <td>#${b.number}</td>
+            <td class="port">${escapeHtml(b.source)}${b.v6 ? ' <span class="hint" style="font-size:0.7rem">(v6)</span>' : ''}</td>
+            <td>${escapeHtml(b.comment || "")}</td>
+            <td>${j.sudo_ok ? `<button type="button" class="danger" data-ufw-unblock="${escapeHtml(b.source)}">×</button>` : ""}</td>
+          </tr>`).join("")
+        : `<tr><td colspan="4" class="empty">no blocks</td></tr>`;
+    }
+
+    // Other rules table — each row has a delete button (sudo permitting).
+    const otherBody = document.getElementById("ufw-other-body");
+    if (otherBody) {
+      const others = j.other || [];
+      otherBody.innerHTML = others.length
+        ? others.map(r => `<tr>
+            <td>#${r.number}</td>
+            <td class="port">${escapeHtml(r.to)}</td>
+            <td>${escapeHtml(r.action)}</td>
+            <td>${escapeHtml(r.from)}</td>
+            <td>${escapeHtml(r.comment || "")}</td>
+            <td>${j.sudo_ok ? `<button type="button" class="danger" data-ufw-delete="${r.number}" data-ufw-summary="${escapeHtml(r.to + ' from ' + r.from)}">×</button>` : ""}</td>
+          </tr>`).join("")
+        : `<tr><td colspan="6" class="empty">none</td></tr>`;
+      setText("ufw-other-count", `(${others.length})`);
+    }
+  }
+
+  async function deleteUfwRule(number, summary) {
+    if (!confirm(`Delete rule #${number} (${summary})? This is non-reversible.`)) return;
+    const status = document.getElementById("ufw-status");
+    if (status) { status.className = "form-status"; status.textContent = `deleting #${number}…`; }
+    try {
+      const r = await fetch("/api/ufw/delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ number }),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || j.output || `HTTP ${r.status}`);
+      if (status) { status.classList.add("ok"); status.textContent = `deleted #${number} · ${j.output || "ok"}`; }
+    } catch (err) {
+      if (status) { status.classList.add("err"); status.textContent = `error: ${err.message}`; }
+    } finally {
+      loadUfwState();
+    }
+  }
+
+  async function setUfwScope(port, proto, scope, label) {
+    const status = document.getElementById("ufw-status");
+    if (status) { status.className = "form-status"; status.textContent = `applying ${port}/${proto} → ${scope}…`; }
+    if (label === "Admin panel" && scope === "off") {
+      if (!confirm(`Closing the panel port (${port}/${proto}) will lock you out of this UI immediately. Continue?`)) {
+        if (status) status.textContent = "";
+        loadUfwState();
+        return;
+      }
+    }
+    if (label === "Admin panel" && scope === "anywhere") {
+      if (!confirm("Exposing the panel port to the public internet means anyone can attempt to log in. Make sure you've enabled panel auth (./install.sh --enable-auth) and rotated your stream creds. Continue?")) {
+        if (status) status.textContent = "";
+        loadUfwState();
+        return;
+      }
+    }
+    try {
+      const r = await fetch("/api/ufw/port", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ port, proto, scope }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      if (status) {
+        status.classList.add("ok");
+        status.textContent = `${port}/${proto} → ${j.scope_after}`;
+      }
+    } catch (err) {
+      if (status) {
+        status.classList.add("err");
+        status.textContent = `error: ${err.message}`;
+      }
+    } finally {
+      loadUfwState();
+    }
+  }
+
+  async function unblockUfwSource(source) {
+    if (!confirm(`Unblock ${source}? UFW will allow connections from this source again.`)) return;
+    const status = document.getElementById("ufw-status");
+    if (status) { status.className = "form-status"; status.textContent = `unblocking ${source}…`; }
+    try {
+      const r = await fetch("/api/ufw/unblock", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source }),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      if (status) { status.classList.add("ok"); status.textContent = `unblocked ${source} · removed ${j.deleted} rule(s)`; }
+    } catch (err) {
+      if (status) { status.classList.add("err"); status.textContent = `error: ${err.message}`; }
+    } finally {
+      loadUfwState();
+    }
+  }
+
+  document.getElementById("ufw-block-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const status = document.getElementById("ufw-status");
+    const source = (document.getElementById("ufw-block-source")?.value || "").trim();
+    const reason = (document.getElementById("ufw-block-reason")?.value || "").trim();
+    if (!source) {
+      if (status) { status.className = "form-status err"; status.textContent = "source is required"; }
+      return;
+    }
+    if (status) { status.className = "form-status"; status.textContent = `blocking ${source}…`; }
+    try {
+      const r = await fetch("/api/ufw/block", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source, reason }),
+      });
+      const j = await r.json();
+      if (!r.ok || j.ok === false) throw new Error(j.detail || j.error || `HTTP ${r.status}`);
+      if (status) {
+        status.classList.add("ok");
+        const kicked = (j.kicked || []).length;
+        status.textContent = `blocked ${source}${kicked ? ` · kicked ${kicked} session(s)` : ""}`;
+      }
+      document.getElementById("ufw-block-source").value = "";
+      document.getElementById("ufw-block-reason").value = "";
+    } catch (err) {
+      if (status) { status.classList.add("err"); status.textContent = `error: ${err.message}`; }
+    } finally {
+      loadUfwState();
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    const scopeBtn = e.target.closest("#ufw-managed button[data-port]");
+    if (scopeBtn && !scopeBtn.disabled) {
+      const row = scopeBtn.closest("tr");
+      const label = row?.querySelector("td:nth-child(2)")?.firstChild?.textContent || "";
+      setUfwScope(parseInt(scopeBtn.dataset.port, 10), scopeBtn.dataset.proto, scopeBtn.dataset.scope, label.trim());
+      return;
+    }
+    const delBtn = e.target.closest("button[data-ufw-delete]");
+    if (delBtn && !delBtn.disabled) {
+      deleteUfwRule(parseInt(delBtn.dataset.ufwDelete, 10), delBtn.dataset.ufwSummary || "");
+      return;
+    }
+    const unblockBtn = e.target.closest("button[data-ufw-unblock]");
+    if (unblockBtn && !unblockBtn.disabled) {
+      unblockUfwSource(unblockBtn.dataset.ufwUnblock);
+    }
+  });
+
+  document.getElementById("ufw-refresh")?.addEventListener("click", loadUfwState);
+  document.getElementById("ufw-toggle-active")?.addEventListener("click", async (e) => {
+    const action = e.currentTarget.dataset.action;
+    if (action === "disable" && !confirm("Disabling UFW means every port is open until re-enabled. Continue?")) return;
+    const status = document.getElementById("ufw-status");
+    if (status) { status.className = "form-status"; status.textContent = `${action}…`; }
+    try {
+      const r = await fetch(`/api/ufw/${action}`, { method: "POST" });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || j.output || `HTTP ${r.status}`);
+      if (status) { status.classList.add("ok"); status.textContent = j.output || "ok"; }
+    } catch (err) {
+      if (status) { status.classList.add("err"); status.textContent = `error: ${err.message}`; }
+    } finally {
+      loadUfwState();
+    }
+  });
+
   // Boot
   loadStreamCreds();
   loadAutoRotateState();
+  loadWebrtcState();
+  loadUfwState();
+  setInterval(loadWebrtcState, 30000);
+  setInterval(loadUfwState, 60000);
 })();

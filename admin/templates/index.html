@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>usb-rtsp</title>
+<link rel="icon" type="image/svg+xml" href="/static-core/favicon.svg">
 <link rel="stylesheet" href="/static-core/style.css">
 </head>
 <body>
@@ -20,14 +21,32 @@
     <span id="agg">paths: …</span>
   </div>
   <div class="auth-bar" id="auth-bar" hidden>
-    <span class="auth-user" id="auth-user">—</span>
-    <form method="post" action="/logout" style="display:inline">
-      <button type="submit" class="logout-btn">Logout</button>
+    <span class="auth-pill" title="logged in user">
+      <svg class="auth-pill-icon" viewBox="0 0 16 16" width="11" height="13" aria-hidden="true">
+        <path fill="currentColor" d="M8 1a3.5 3.5 0 0 0-3.5 3.5V7H4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-.5V4.5A3.5 3.5 0 0 0 8 1zm0 1.5a2 2 0 0 1 2 2V7H6V4.5a2 2 0 0 1 2-2zm0 6.25a1.25 1.25 0 0 1 .417 2.43V13h-.834v-1.82A1.25 1.25 0 0 1 8 8.75z"/>
+      </svg>
+      <span id="auth-user">—</span>
+    </span>
+    <form method="post" action="/logout" class="logout-form">
+      <button type="submit" class="logout-btn">log out</button>
     </form>
   </div>
 </header>
 
 <main>
+
+<div class="host-toggle" id="host-toggle">
+  <span class="host-toggle-label">URL host:</span>
+  <button type="button" data-host-mode="lan"{% if not host_options.lan %} hidden{% endif %}>
+    LAN <code>{{ host_options.lan or '—' }}</code>
+  </button>
+  <button type="button" data-host-mode="public"{% if not host_options.public %} hidden{% endif %}>
+    Public <code>{{ host_options.public or '—' }}</code>
+  </button>
+  <button type="button" data-host-mode="dns"{% if not host_options.dns %} hidden{% endif %}>
+    DNS <code>{{ host_options.dns or '—' }}</code>
+  </button>
+</div>
 
 {# Plugin sections — each enabled plugin's templates/section.html.
    The plugin's section_context() can add its own template variables.
@@ -42,6 +61,18 @@
 </div>
 
 <div class="host-stack">
+<section class="streams">
+  <h2>Active streams</h2>
+  <table>
+    <thead>
+      <tr><th>protocol</th><th>path</th><th>peer</th><th>state</th><th>transport</th><th>tx</th><th>rx</th><th>duration</th><th></th></tr>
+    </thead>
+    <tbody id="sessions-tbody">
+      <tr class="empty"><td colspan="9">no active sessions</td></tr>
+    </tbody>
+  </table>
+</section>
+
 <section class="host">
   <h2>Host</h2>
   <div class="host-grid">
@@ -143,17 +174,22 @@
   </div>
 </section>
 
-<section class="streams">
-  <h2>Active streams</h2>
-  <table>
-    <thead>
-      <tr><th>protocol</th><th>path</th><th>peer</th><th>state</th><th>transport</th><th>tx</th><th>rx</th><th>duration</th></tr>
-    </thead>
-    <tbody id="sessions-tbody">
-      <tr class="empty"><td colspan="8">no active sessions</td></tr>
-    </tbody>
-  </table>
+<section class="webrtc-public" data-hardware-card="webrtc-public" hidden>
+  <h2>WebRTC public access</h2>
+  <div class="host-grid">
+    <div class="host-tile" data-host-tile="webrtc-public-ip">
+      <div class="host-label">Public IP</div>
+      <div class="host-value mono" data-webrtc-public-ip>—</div>
+      <div class="host-sub" data-webrtc-public-source>—</div>
+    </div>
+    <div class="host-tile">
+      <div class="host-label">Last detected</div>
+      <div class="host-value" data-webrtc-public-detected>—</div>
+      <div class="host-sub"><a href="/settings#webrtc-section">configure ↗</a></div>
+    </div>
+  </div>
 </section>
+
 </div>
 
 </main>
@@ -166,7 +202,14 @@
   {% if stream_auth %}
   window.__USB_RTSP_STREAM_CREDS__ = { user: {{ stream_user|tojson }}, pass: {{ stream_pass|tojson }} };
   {% endif %}
+  window.__USB_RTSP_HOSTS__ = {
+    lan:     {{ host_options.lan|tojson }},
+    public:  {{ host_options.public|tojson }},
+    dns:     {{ host_options.dns|tojson }},
+    current: {{ host|tojson }}
+  };
 </script>
+<script src="/static-core/vendor/qrcode.min.js"></script>
 <script src="/static-core/app.js"></script>
 </body>
 </html>

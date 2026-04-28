@@ -39,6 +39,12 @@ DEFAULT_CONFIG = {
         "enabled": False,
         "user": "stream",
     },
+    "webrtc": {
+        "public_host": "",
+        "refresh_minutes": 30,
+        "auto_detect": True,
+        "ip_echo_url": "https://ifconfig.me",
+    },
 }
 
 

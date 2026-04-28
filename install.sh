@@ -25,6 +25,8 @@ APT_DEPS=(ffmpeg v4l-utils python3-fastapi python3-uvicorn python3-jinja2 python
 # CLI flags
 ENABLE_AUTH=0
 DISABLE_AUTH=0
+ENABLE_UFW_MGMT=0
+DISABLE_UFW_MGMT=0
 LIST_PLUGINS=0
 declare -a ENABLE_PLUGINS=()
 declare -a DISABLE_PLUGINS=()
@@ -39,6 +41,8 @@ for arg in "$@"; do
   case "$arg" in
     --enable-auth)        ENABLE_AUTH=1 ;;
     --disable-auth)       DISABLE_AUTH=1 ;;
+    --enable-ufw-mgmt)    ENABLE_UFW_MGMT=1 ;;
+    --disable-ufw-mgmt)   DISABLE_UFW_MGMT=1 ;;
     --list-plugins)       LIST_PLUGINS=1 ;;
     --enable-plugin)      NEXT_IS="enable-plugin" ;;
     --disable-plugin)     NEXT_IS="disable-plugin" ;;
@@ -296,6 +300,36 @@ elif (( DISABLE_AUTH )); then
   green "✓ auth disabled"
 fi
 
+# ── ufw management: opt-in / opt-out ───────────────────────────────────────
+# When opted in, the panel can change UFW rules without typing a sudo password.
+# Limited to /usr/sbin/ufw — the user can't escalate to anything else.
+UFW_SUDOERS_FILE="/etc/sudoers.d/usb-rtsp-ufw"
+UFW_BIN="/usr/sbin/ufw"
+
+if (( ENABLE_UFW_MGMT )); then
+  if [[ ! -x "$UFW_BIN" ]]; then
+    warn "ufw not found at $UFW_BIN — install it first ('sudo apt-get install ufw')"
+  else
+    bold "granting passwordless sudo for ufw to $USER (sudo required)…"
+    SUDOERS_LINE="$USER ALL=(ALL) NOPASSWD: $UFW_BIN"
+    # validate syntax via visudo -c before installing
+    TMPF="$(mktemp)"
+    printf '%s\n' "$SUDOERS_LINE" > "$TMPF"
+    chmod 0440 "$TMPF"
+    if sudo visudo -cf "$TMPF" >/dev/null; then
+      sudo install -m 0440 -o root -g root "$TMPF" "$UFW_SUDOERS_FILE"
+      green "✓ ufw mgmt enabled — wrote $UFW_SUDOERS_FILE"
+    else
+      die "generated sudoers line failed visudo -c — refusing to install"
+    fi
+    rm -f "$TMPF"
+  fi
+elif (( DISABLE_UFW_MGMT )); then
+  bold "removing $UFW_SUDOERS_FILE (sudo required)…"
+  sudo rm -f "$UFW_SUDOERS_FILE"
+  green "✓ ufw mgmt disabled"
+fi
+
 bold "rendering mediamtx.yml…"
 "$REPO_DIR/bin/usb-rtsp-render" >/dev/null
 green "✓ $CONFIG_DIR/mediamtx.yml"
@@ -351,10 +385,16 @@ else
   AUTH_PREFIX=""
 fi
 python3 -c "
-import yaml
-d = yaml.safe_load(open('$CONFIG_DIR/cameras.yml')) or {}
-for c in d.get('cameras', []):
-    print(f\"  rtsp://{c['name']}: rtsp://${AUTH_PREFIX}$host:8554/{c['name']}  ({c['format']} {c['width']}x{c['height']}@{c['fps']})\")
+import yaml, os
+src = '$CONFIG_DIR/usb/cameras.yml'
+if not os.path.exists(src):
+    src = '$CONFIG_DIR/cameras.yml'  # legacy path, just in case
+if os.path.exists(src):
+    d = yaml.safe_load(open(src)) or {}
+    for c in d.get('cameras', []):
+        print(f\"  rtsp://{c['name']}: rtsp://${AUTH_PREFIX}$host:8554/{c['name']}  ({c['format']} {c['width']}x{c['height']}@{c['fps']})\")
+else:
+    print('  (no cameras configured yet — plug a USB cam in and re-run install)')
 "
 echo
 echo "  admin:    http://$host:8080/    (or http://$ip:8080/)"
