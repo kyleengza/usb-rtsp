@@ -11,13 +11,14 @@
   <article class="card{% if not c.is_present %} missing{% endif %}{% if is_disabled %} input-disabled{% endif %}" data-cam="{{ cam.name }}" data-plugin="usb" data-on-demand="{{ 'true' if on_demand_default else 'false' }}">
     <header>
       <h3>{{ cam.name }}</h3>
-      <span class="ready-dot" data-ready></span>
+      <span class="cam-status" data-status>(—)</span>
       <label class="switch" title="enable / disable {{ cam.name }}">
         <input type="checkbox" data-input-toggle="usb/{{ cam.name }}" {% if not is_disabled %}checked{% endif %}>
         <span class="slider"></span>
       </label>
       <div class="card-tabs">
         <button type="button" class="card-tab" data-act="preview">Live preview ▾</button>
+        <button type="button" class="card-tab" data-act="urls">URLs ▾</button>
         <button type="button" class="card-tab" data-act="settings">Settings ▾</button>
       </div>
     </header>
@@ -38,6 +39,7 @@
     {% set webrtc_proxy    = '/preview/' ~ cam.name ~ '/' %}
     {% set hls_url  = hls_pre  ~ host ~ hls_suf  %}
     {% set rtsp_url = rtsp_pre ~ host ~ rtsp_suf %}
+    <div class="urls-wrap" hidden>
     <ul class="urls">
       <li class="url-row" data-url-pre="{{ webrtc_pre }}" data-url-suf="{{ webrtc_suf }}">
         <span class="url-label url-best">WebRTC</span>
@@ -62,6 +64,7 @@
         <span class="url-note">ffplay, mpv, most Android RTSP apps (not VLC)</span>
       </li>
     </ul>
+    </div>
     <div class="meta">
       <div><strong>{{ c.card_name }}</strong></div>
       <div class="device">{{ cam.by_id }}</div>

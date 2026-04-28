@@ -345,6 +345,17 @@ section > h2 .fold-btn.open { color: var(--accent); border-color: var(--accent);
 .ready-dot.ok { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
 .ready-dot.err { background: var(--err); }
 
+/* Inline header status (e.g. "(idle)" / "(2 viewers)" / "(error)") */
+.cam-status {
+  font-size: 0.78rem;
+  font-family: ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.cam-status.ok   { color: var(--ok); }
+.cam-status.warn { color: var(--warn); }
+.cam-status.err  { color: var(--err); }
+
 .meta { color: var(--muted); margin: 0.4rem 0 0.2rem; }
 .meta .device { font-family: ui-monospace, "SF Mono", monospace; font-size: 0.8rem; }
 .live { margin: 0.3rem 0 0.7rem; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }

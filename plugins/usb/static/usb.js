@@ -19,27 +19,40 @@
       const name = card.dataset.cam;
       const onDemand = card.dataset.onDemand === "true";
       const item = items.find(p => p.name === name);
-      const dot = $("[data-ready]", card);
+      const statusEl  = $("[data-status]", card);
       const readersEl = $("[data-readers]", card);
-      const bytesEl = $("[data-bytes]", card);
-      const upEl = $("[data-uptime]", card);
+      const bytesEl   = $("[data-bytes]", card);
+      const upEl      = $("[data-uptime]", card);
+
+      const setStatus = (text, kind = "") => {
+        if (!statusEl) return;
+        statusEl.classList.remove("ok", "warn", "err");
+        if (kind) statusEl.classList.add(kind);
+        statusEl.textContent = text;
+      };
+
       if (!item) {
-        dot.classList.remove("ok", "err");
+        setStatus("(no path)");
         readersEl.textContent = "(no path)";
         bytesEl.textContent = "—";
         upEl.textContent = "—";
         continue;
       }
-      const ready    = item.ready === true || item.sourceReady === true;
-      const readers  = item.readers_count || 0;
-      // On-demand idle (no viewer + encoder not warm) is the *normal* state:
-      // dot stays neutral, viewer line shows "idle (on-demand)" instead of
-      // a misleading red dot + "0 viewers".
-      dot.classList.remove("ok", "err");
-      if (ready)                                  dot.classList.add("ok");
-      else if (!onDemand || readers > 0)          dot.classList.add("err");
-      // (else: leave bare → CSS shows the muted gray default)
+      const ready   = item.ready === true || item.sourceReady === true;
+      const readers = item.readers_count || 0;
 
+      // Header status text. Live = green, idle = muted, error = red.
+      if (ready && readers > 0) {
+        setStatus(`(${readers} viewer${readers === 1 ? "" : "s"})`, "ok");
+      } else if (ready) {
+        setStatus("(ready · 0 viewers)", "ok");
+      } else if (onDemand && readers === 0) {
+        setStatus("(idle)");
+      } else {
+        setStatus("(error)", "err");
+      }
+
+      // Live counters under the meta block — same data, more detail.
       if (!ready && onDemand && readers === 0) {
         readersEl.textContent = "idle (on-demand)";
         bytesEl.textContent   = "—";
@@ -181,6 +194,17 @@
       wrap.hidden = isOpen;
       btn.classList.toggle("open", !isOpen);
       btn.textContent = isOpen ? "Settings ▾" : "Hide settings ▴";
+    });
+
+    // URLs tab — folds the WebRTC/HLS/RTSP URL list under a button.
+    $("[data-act=urls]", card)?.addEventListener("click", () => {
+      const btn = $("[data-act=urls]", card);
+      const wrap = $(".urls-wrap", card);
+      if (!wrap) return;
+      const isOpen = !wrap.hidden;
+      wrap.hidden = isOpen;
+      btn.classList.toggle("open", !isOpen);
+      btn.textContent = isOpen ? "URLs ▾" : "Hide URLs ▴";
     });
 
     $("[data-act=preview-reconnect]", card)?.addEventListener("click", () => {
