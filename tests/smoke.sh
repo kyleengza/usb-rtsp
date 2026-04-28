@@ -45,22 +45,13 @@ n="$(echo "$paths_json" | python3 -c 'import json, sys; print(len(json.load(sys.
 [[ "$n" -ge 1 ]] || fail "no paths configured"
 pass "$n path(s) configured"
 
-# 4. first path becomes ready within 10s
+# 4. first path becomes ready (subscribing via ffprobe triggers the
+#    on-demand encoder, so we run the probe before checking 'ready' —
+#    runOnDemand paths sit at sourceReady=false until something subscribes)
 first_cam="$(echo "$paths_json" | python3 -c 'import json, sys; print(json.load(sys.stdin)["items"][0]["name"])')"
-info "waiting for path $first_cam to become ready (≤10s)…"
-ready=0
-for _ in $(seq 1 20); do
-  state="$(curl -fsS http://127.0.0.1:9997/v3/paths/list | python3 -c 'import json, sys; d=json.load(sys.stdin); p=[p for p in d["items"] if p["name"]==sys.argv[1]][0]; print(p.get("ready") or p.get("sourceReady"))' "$first_cam")"
-  [[ "$state" == "True" ]] && { ready=1; break; }
-  sleep 0.5
-done
-[[ "$ready" == 1 ]] || fail "path $first_cam never became ready (check journalctl --user -u usb-rtsp)"
-pass "path $first_cam is ready"
-
-# 5. RTSP probe succeeds
-info "ffprobe rtsp://127.0.0.1:8554/$first_cam"
-codec="$(ffprobe -v error -rtsp_transport tcp -i "rtsp://127.0.0.1:8554/$first_cam" -show_streams -of json 2>/dev/null | python3 -c 'import json, sys; print(json.load(sys.stdin)["streams"][0]["codec_name"])')"
-[[ -n "$codec" ]] || fail "ffprobe failed"
+info "ffprobe rtsp://127.0.0.1:8554/$first_cam (triggers on-demand spawn)"
+codec="$(ffprobe -v error -rtsp_transport tcp -timeout 15000000 -i "rtsp://127.0.0.1:8554/$first_cam" -show_streams -of json 2>/dev/null | python3 -c 'import json, sys; d=json.load(sys.stdin); print(d["streams"][0]["codec_name"])' 2>/dev/null || true)"
+[[ -n "$codec" ]] || fail "ffprobe failed (check journalctl --user -u usb-rtsp)"
 pass "stream codec: $codec"
 
 # 6. snap CLI works

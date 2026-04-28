@@ -111,9 +111,24 @@ def render_paths(ctx) -> dict[str, Any]:
             continue
         prof = profiles.get(cam.get("profile") or "balanced", {})
         qprof = qpresets.get(cam.get("quality") or "medium", {})
-        out[cam["name"]] = {
-            "source": "publisher",
-            "runOnInit": _ffmpeg_cmd(cam, prof, qprof),
-            "runOnInitRestart": True,
-        }
+        cmd = _ffmpeg_cmd(cam, prof, qprof)
+        # Default: on-demand encode. ffmpeg only spawns when a viewer
+        # subscribes and stops 10s after the last one leaves. Set
+        # `on_demand: false` per camera in cameras.yml to revert to the
+        # always-running runOnInit behaviour (zero first-viewer latency
+        # at the cost of ~20% constant CPU per 720p H.264 stream).
+        if cam.get("on_demand", True):
+            out[cam["name"]] = {
+                "source": "publisher",
+                "runOnDemand":             cmd,
+                "runOnDemandRestart":      True,
+                "runOnDemandStartTimeout": "10s",
+                "runOnDemandCloseAfter":   "10s",
+            }
+        else:
+            out[cam["name"]] = {
+                "source": "publisher",
+                "runOnInit":        cmd,
+                "runOnInitRestart": True,
+            }
     return out
