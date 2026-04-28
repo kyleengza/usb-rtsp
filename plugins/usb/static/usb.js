@@ -32,7 +32,7 @@
       };
 
       if (!item) {
-        setStatus("(no path)");
+        setStatus("no path");
         readersEl.textContent = "(no path)";
         bytesEl.textContent = "—";
         upEl.textContent = "—";
@@ -41,15 +41,15 @@
       const ready   = item.ready === true || item.sourceReady === true;
       const readers = item.readers_count || 0;
 
-      // Header status text. Live = green, idle = muted, error = red.
+      // Header status pill. Live = green, idle = muted, error = red.
       if (ready && readers > 0) {
-        setStatus(`(${readers} viewer${readers === 1 ? "" : "s"})`, "ok");
+        setStatus(`${readers} viewer${readers === 1 ? "" : "s"}`, "ok");
       } else if (ready) {
-        setStatus("(ready · 0 viewers)", "ok");
+        setStatus("ready · 0 viewers", "ok");
       } else if (onDemand && readers === 0) {
-        setStatus("(idle)");
+        setStatus("idle");
       } else {
-        setStatus("(error)", "err");
+        setStatus("error", "err");
       }
 
       // Live counters under the meta block — same data, more detail.

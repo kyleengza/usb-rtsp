@@ -11,7 +11,7 @@
   <article class="card{% if not c.is_present %} missing{% endif %}{% if is_disabled %} input-disabled{% endif %}" data-cam="{{ cam.name }}" data-plugin="usb" data-on-demand="{{ 'true' if on_demand_default else 'false' }}">
     <header>
       <h3>{{ cam.name }}</h3>
-      <span class="cam-status" data-status>(—)</span>
+      <span class="cam-status" data-status>—</span>
       <label class="switch" title="enable / disable {{ cam.name }}">
         <input type="checkbox" data-input-toggle="usb/{{ cam.name }}" {% if not is_disabled %}checked{% endif %}>
         <span class="slider"></span>
