@@ -26,7 +26,7 @@
 
       const setStatus = (text, kind = "") => {
         if (!statusEl) return;
-        statusEl.classList.remove("ok", "warn", "err");
+        statusEl.classList.remove("ok", "warn", "err", "idle");
         if (kind) statusEl.classList.add(kind);
         statusEl.textContent = text;
       };
@@ -47,7 +47,7 @@
       } else if (ready) {
         setStatus("ready · 0 viewers", "ok");
       } else if (onDemand && readers === 0) {
-        setStatus("idle");
+        setStatus("idle", "idle");
       } else {
         setStatus("error", "err");
       }

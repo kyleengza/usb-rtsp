@@ -374,9 +374,10 @@ section > h2 .fold-btn.open { color: var(--accent); border-color: var(--accent);
   font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
-.cam-status.ok   { color: var(--ok);   border-color: var(--ok); }
-.cam-status.warn { color: var(--warn); border-color: var(--warn); }
-.cam-status.err  { color: var(--err);  border-color: var(--err); }
+.cam-status.ok   { color: var(--ok);     border-color: var(--ok); }
+.cam-status.warn { color: var(--warn);   border-color: var(--warn); }
+.cam-status.err  { color: var(--err);    border-color: var(--err); }
+.cam-status.idle { color: var(--accent); border-color: var(--accent); }
 
 .meta { color: var(--muted); margin: 0.4rem 0 0.2rem; }
 .meta .device { font-family: ui-monospace, "SF Mono", monospace; font-size: 0.8rem; }
