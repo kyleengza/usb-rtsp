@@ -182,8 +182,9 @@ header h1 { margin: 0; font-size: 1.2rem; letter-spacing: 0.02em; }
   margin-right: 0.3rem;
 }
 .host-toggle button {
-  padding: 0.2rem 0.6rem;
+  padding: 0.15rem 0.7rem;
   font-size: 0.78rem;
+  border-radius: 999px;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -247,8 +248,12 @@ section > h2 .fold-btn {
   text-transform: none;
   letter-spacing: 0;
   color: var(--muted);
-  padding: 0.1rem 0.55rem;
+  padding: 0.15rem 0.7rem;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--border);
 }
+section > h2 .fold-btn:hover { color: var(--accent); border-color: var(--accent); }
 section > h2 .fold-btn.open { color: var(--accent); border-color: var(--accent); }
 .empty { color: var(--muted); font-style: italic; }
 
@@ -328,9 +333,20 @@ section > h2 .fold-btn.open { color: var(--accent); border-color: var(--accent);
 }
 .qr-modal-hint { margin-top: 0.5rem; color: var(--muted); font-size: 0.75rem; text-align: center; }
 
-.card-tabs { margin-left: auto; display: flex; gap: 0.4rem; }
-.card-tab { padding: 0.15rem 0.55rem; font-size: 0.78rem; color: var(--muted); }
+.card-tabs { margin-left: auto; display: flex; gap: 0.4rem; flex-wrap: wrap; }
+/* Card-tab chips match the .badge / host-toggle pill style: rounded
+   pill, muted by default, accent-colored when open/active. */
+.card-tab {
+  padding: 0.15rem 0.7rem;
+  font-size: 0.78rem;
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.card-tab:hover { color: var(--accent); border-color: var(--accent); }
 .card-tab.open { color: var(--ok); border-color: var(--ok); }
+.card-tab.danger { color: var(--err); border-color: var(--err); }
 .settings-wrap { margin-top: 0.5rem; }
 .preview { margin: 0.5rem 0; }
 .preview iframe { width: 100%; aspect-ratio: 16/9; border: 1px solid var(--border); border-radius: 4px; background: #000; display: block; }
