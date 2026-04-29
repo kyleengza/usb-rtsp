@@ -44,6 +44,14 @@ DEFAULT_CONFIG = {
         "refresh_minutes": 30,
         "auto_detect": True,
         "ip_echo_url": "https://ifconfig.me",
+        # STUN servers help browsers discover their server-reflexive
+        # ICE candidates. Required when the browser is off-LAN (cellular,
+        # guest network) or when the AP enforces client isolation. Empty
+        # list = no STUN advertised (LAN-only mode).
+        "stun_servers": [
+            "stun:stun.l.google.com:19302",
+            "stun:stun.cloudflare.com:3478",
+        ],
     },
 }
 

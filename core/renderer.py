@@ -140,7 +140,8 @@ def build_config() -> dict:
         "logDestinations": ["stdout"],
         "readTimeout": "10s",
         "writeTimeout": "10s",
-        "readBufferCount": read_buf,
+        # readBufferCount was renamed to writeQueueSize in mediamtx ≥ 1.18
+        # — same semantics. Keep the legacy local var for tunability.
         "writeQueueSize": write_q,
         "udpMaxPayloadSize": 1472,
         **_auth_block(),
@@ -155,18 +156,52 @@ def build_config() -> dict:
         "hlsVariant": "mpegts",
         "hlsSegmentCount": 5,
         "hlsSegmentDuration": "1s",
-        "hlsAllowOrigin": "*",
+        "hlsAllowOrigins": ["*"],
         "webrtc": True,
         "webrtcAddress": ":8889",
-        "webrtcAllowOrigin": "*",
+        "webrtcAllowOrigins": ["*"],
         "webrtcLocalUDPAddress": ":8189",
-        **({"webrtcAdditionalHosts": _local_ipv4s()} if _local_ipv4s() else {}),
-        **({"webrtcICEHostNAT1To1IPs": [public_ip.read_cached()]} if public_ip.read_cached() else {}),
+        # mediamtx ≥ v1.18 unified webrtcICEHostNAT1To1IPs into
+        # webrtcAdditionalHosts. Both LAN and public IPs go in one list;
+        # mediamtx emits each as an ICE host candidate in the SDP answer.
+        **({"webrtcAdditionalHosts": _webrtc_advertised_hosts()} if _webrtc_advertised_hosts() else {}),
+        **(_webrtc_ice_servers_config()),
         "rtmp": False,
         "srt": False,
         "paths": paths or {},
     }
     return cfg
+
+
+def _webrtc_advertised_hosts() -> list[str]:
+    """Combined ICE host list: LAN IPs + cached public IP. Order: LAN
+    first so browsers on the same /24 try direct UDP before going via
+    NAT hairpin to the public address."""
+    out: list[str] = list(_local_ipv4s() or [])
+    pub = public_ip.read_cached()
+    if pub and pub not in out:
+        out.append(pub)
+    return out
+
+
+def _webrtc_ice_servers_config() -> dict:
+    """Pull configured STUN/TURN URLs out of auth.yml's webrtc section
+    and emit them as mediamtx's ``webrtcICEServers2`` list. mediamtx
+    advertises these to browsers via the WHEP answer; without them
+    browsers can only use host candidates and ICE fails when the
+    browser is off-LAN or client-isolated.
+
+    Empty list = no entry emitted (LAN-only mode)."""
+    from core import auth as auth_lib  # avoid import cycle at module load
+    cfg = auth_lib.load_config().get("webrtc") or {}
+    servers = cfg.get("stun_servers") or []
+    out = []
+    for raw in servers:
+        if isinstance(raw, str) and raw.strip():
+            out.append({"url": raw.strip()})
+        elif isinstance(raw, dict) and raw.get("url"):
+            out.append({k: v for k, v in raw.items() if k in ("url", "username", "password")})
+    return {"webrtcICEServers2": out} if out else {}
 
 
 def main() -> int:
