@@ -689,8 +689,9 @@ async function refreshWebrtcPublic() {
 // The endpoint names happen to follow a regular pattern that we encode here.
 
 const INPUT_ROUTE = {
-  usb:   (name, action) => `/api/usb/cam/${encodeURIComponent(name)}/${action}`,
-  relay: (name, action) => `/api/relay/sources/${encodeURIComponent(name)}/${action}`,
+  usb:       (name, action) => `/api/usb/cam/${encodeURIComponent(name)}/${action}`,
+  relay:     (name, action) => `/api/relay/sources/${encodeURIComponent(name)}/${action}`,
+  inference: (name, action) => `/api/inference/jobs/${encodeURIComponent(name)}/${action}`,
 };
 
 function wireInputToggles() {
