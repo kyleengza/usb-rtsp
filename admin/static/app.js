@@ -719,9 +719,179 @@ function wireDashboardFolds() {
   });
 }
 
+// ─── dashboard section reorder (drag handle in <h2>) ──────────────────────
+// Sibling of wireDashboardFolds — injects a ⋮⋮ grip into each h2 and lets
+// the user drag sections within their stack. Order persists per-stack to
+// localStorage. Cross-stack drops are ignored.
+
+function _sectionKey(sec) {
+  return sec.id || sec.classList[0] || sec.tagName.toLowerCase();
+}
+
+function applyStackOrder(stack, savedKeys) {
+  const byKey = new Map();
+  Array.from(stack.children).forEach(sec => byKey.set(_sectionKey(sec), sec));
+  savedKeys.forEach(k => {
+    const sec = byKey.get(k);
+    if (sec) stack.appendChild(sec);
+  });
+}
+
+function persistStackOrder(stack, storageKey) {
+  const keys = Array.from(stack.children).map(_sectionKey);
+  try { localStorage.setItem(storageKey, JSON.stringify(keys)); } catch {}
+}
+
+function _stackChildSection(el, stack) {
+  while (el && el !== stack) {
+    if (el.parentElement === stack && el.tagName === "SECTION") return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
+function wireDashboardReorder() {
+  document.querySelectorAll(".plugin-stack, .host-stack").forEach(stack => {
+    const stackKey = stack.classList.contains("plugin-stack")
+      ? "plugin-stack" : "host-stack";
+    const storageKey = `dash-order:${stackKey}`;
+
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) applyStackOrder(stack, JSON.parse(raw));
+    } catch {}
+
+    stack.querySelectorAll(":scope > section").forEach(section => {
+      const h2 = section.querySelector(":scope > h2");
+      if (!h2 || section.dataset.reorderable === "1") return;
+      section.dataset.reorderable = "1";
+
+      const grip = document.createElement("button");
+      grip.type = "button";
+      grip.className = "card-tab section-grip";
+      grip.draggable = true;
+      grip.title = "drag to reorder";
+      grip.textContent = "⋮";
+      h2.insertBefore(grip, h2.firstChild);
+
+      grip.addEventListener("dragstart", e => {
+        section.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", _sectionKey(section));
+      });
+      grip.addEventListener("dragend", () => {
+        section.classList.remove("dragging");
+        persistStackOrder(stack, storageKey);
+      });
+    });
+
+    stack.addEventListener("dragover", e => {
+      const dragging = stack.querySelector(".dragging");
+      if (!dragging) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      const over = _stackChildSection(e.target, stack);
+      if (!over || over === dragging) return;
+      const rect = over.getBoundingClientRect();
+      const after = (e.clientY - rect.top) > rect.height / 2;
+      const next = after ? over.nextSibling : over;
+      if (dragging.nextSibling !== next && dragging !== next) {
+        stack.insertBefore(dragging, next);
+      }
+    });
+    stack.addEventListener("drop", e => {
+      if (stack.querySelector(".dragging")) e.preventDefault();
+    });
+  });
+}
+
+// Per-card reorder inside .cameras / .relays sections. After fold wiring,
+// cards live inside .fold-body. Card key comes from data-cam / data-relay.
+
+function _cardKey(card) {
+  return card.dataset.cam || card.dataset.relay || card.dataset.name || "";
+}
+
+function _containerChild(el, container, tag) {
+  while (el && el !== container) {
+    if (el.parentElement === container && el.tagName === tag) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
+function wireCardReorder() {
+  document.querySelectorAll("section.cameras, section.relays").forEach(section => {
+    const container = section.querySelector(":scope > .fold-body") || section;
+    const stackKey = section.classList.contains("cameras") ? "cameras" : "relays";
+    const storageKey = `dash-order:${stackKey}-cards`;
+
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        const byKey = new Map();
+        container.querySelectorAll(":scope > article.card").forEach(c => {
+          byKey.set(_cardKey(c), c);
+        });
+        saved.forEach(k => {
+          const c = byKey.get(k);
+          if (c) container.appendChild(c);
+        });
+      }
+    } catch {}
+
+    container.querySelectorAll(":scope > article.card").forEach(card => {
+      const header = card.querySelector(":scope > header");
+      if (!header || card.dataset.reorderable === "1") return;
+      if (!_cardKey(card)) return;
+      card.dataset.reorderable = "1";
+
+      const grip = document.createElement("button");
+      grip.type = "button";
+      grip.className = "card-tab card-grip";
+      grip.draggable = true;
+      grip.title = "drag to reorder";
+      grip.textContent = ":";
+      header.insertBefore(grip, header.firstChild);
+
+      grip.addEventListener("dragstart", e => {
+        card.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", _cardKey(card));
+      });
+      grip.addEventListener("dragend", () => {
+        card.classList.remove("dragging");
+        const keys = Array.from(container.querySelectorAll(":scope > article.card")).map(_cardKey);
+        try { localStorage.setItem(storageKey, JSON.stringify(keys)); } catch {}
+      });
+    });
+
+    container.addEventListener("dragover", e => {
+      const dragging = container.querySelector(":scope > article.card.dragging");
+      if (!dragging) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      const over = _containerChild(e.target, container, "ARTICLE");
+      if (!over || over === dragging) return;
+      const rect = over.getBoundingClientRect();
+      const after = (e.clientY - rect.top) > rect.height / 2;
+      const next = after ? over.nextSibling : over;
+      if (dragging.nextSibling !== next && dragging !== next) {
+        container.insertBefore(dragging, next);
+      }
+    });
+    container.addEventListener("drop", e => {
+      if (container.querySelector(":scope > article.card.dragging")) e.preventDefault();
+    });
+  });
+}
+
 
 document.addEventListener("DOMContentLoaded", () => {
   wireDashboardFolds();
+  wireDashboardReorder();
+  wireCardReorder();
   wireUpRecovery();
   wireInputToggles();
   wireHostToggle();

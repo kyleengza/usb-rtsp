@@ -242,19 +242,44 @@ section > h2 {
   align-items: baseline;
   gap: 0.5rem;
 }
+section > h2 .section-grip,
 section > h2 .fold-btn {
-  margin-left: auto;
   font-size: 0.72rem;
   text-transform: none;
   letter-spacing: 0;
   color: var(--muted);
-  padding: 0.15rem 0.7rem;
+  padding: 0.15rem 0.55rem;
   border-radius: 999px;
   background: var(--panel);
   border: 1px solid var(--border);
 }
+section > h2 .section-grip {
+  cursor: grab;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0.05rem 0.45rem;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+section > h2 .section-grip:active { cursor: grabbing; }
+section > h2 .section-grip:hover { background: var(--accent); color: var(--panel); }
+section > h2 .fold-btn { margin-left: auto; }
 section > h2 .fold-btn:hover { color: var(--accent); border-color: var(--accent); }
 section > h2 .fold-btn.open { color: var(--accent); border-color: var(--accent); }
+section.dragging,
+.card.dragging { opacity: 0.4; }
+
+.card > header > .card-grip {
+  cursor: grab;
+  color: var(--accent);
+  border-color: var(--accent);
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.02rem 0.5rem 0.22rem;
+}
+.card > header > .card-grip:active { cursor: grabbing; }
+.card > header > .card-grip:hover { background: var(--accent); color: var(--panel); }
 .empty { color: var(--muted); font-style: italic; }
 
 .card {
