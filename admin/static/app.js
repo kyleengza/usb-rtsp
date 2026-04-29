@@ -531,6 +531,24 @@ async function refreshHost() {
       : h.hailo.hailort_active === false ? "hailort inactive"
       : "hailort —");
     set("[data-hailo-pcie]",   h.hailo.pcie_link || "—");
+    // Live NNC utilisation. Present only while a hailort app with
+    // HAILO_MONITOR=1 is running — the inference plugin's worker sets it.
+    const u = h.hailo.nnc_utilization_pct;
+    if (u != null) {
+      set("[data-hailo-util]", `${u.toFixed(1)} %`);
+      set("[data-hailo-util-sub]", "neural-core load (live)");
+      const bar = $("[data-hailo-util-bar]");
+      if (bar) {
+        bar.style.width = `${Math.max(0, Math.min(100, u))}%`;
+        bar.classList.remove("ok", "warn", "err");
+        bar.classList.add(u >= 90 ? "warn" : u >= 50 ? "ok" : "ok");
+      }
+    } else {
+      set("[data-hailo-util]", "— %");
+      set("[data-hailo-util-sub]", "idle (no inference running)");
+      const bar = $("[data-hailo-util-bar]");
+      if (bar) { bar.style.width = "0%"; bar.classList.remove("ok", "warn", "err"); }
+    }
   } else {
     showCard("hailo", false);
   }

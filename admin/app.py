@@ -820,7 +820,33 @@ def _hailo_info() -> dict | None:
         info["hailort_active"] = p.stdout.strip() == "active"
     except (subprocess.SubprocessError, FileNotFoundError):
         info["hailort_active"] = None
+    info["nnc_utilization_pct"] = _hailo_nnc_utilization()
     return info
+
+
+def _hailo_nnc_utilization() -> float | None:
+    """Read the Hailo SDK's neural-core utilisation dump. The SDK writes
+    /tmp/nnc_utilization/<random-name> while ANY hailort app is running
+    with HAILO_MONITOR=1 set in its env (the inference plugin's worker
+    sets this). File contains a single ASCII float = NNC utilisation %.
+    Returns None when no app is running (the dir is empty or missing)."""
+    d = Path("/tmp/nnc_utilization")
+    if not d.is_dir():
+        return None
+    # Pick the freshest entry — multiple files would only appear with
+    # multiple concurrent VDevices, which the SDK doesn't fully support
+    # anyway (it warns about non-consistent tracing).
+    try:
+        candidates = sorted(d.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
+    except OSError:
+        return None
+    for p in candidates:
+        try:
+            txt = p.read_text().strip()
+            return round(float(txt), 1)
+        except (OSError, ValueError):
+            continue
+    return None
 
 
 def _i2c_read_word_be(bus: int, addr: int, reg: int) -> int | None:
