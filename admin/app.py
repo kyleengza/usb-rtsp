@@ -824,26 +824,33 @@ def _hailo_info() -> dict | None:
     return info
 
 
+_NNC_STALE_AFTER_S = 10  # the SDK refreshes ~1 Hz; >10 s old = leaked file
+
 def _hailo_nnc_utilization() -> float | None:
     """Read the Hailo SDK's neural-core utilisation dump. The SDK writes
     /tmp/nnc_utilization/<random-name> while ANY hailort app is running
     with HAILO_MONITOR=1 set in its env (the inference plugin's worker
     sets this). File contains a single ASCII float = NNC utilisation %.
-    Returns None when no app is running (the dir is empty or missing)."""
+
+    Returns None when no app is running (dir empty/missing) AND when the
+    freshest file is stale — the SDK is meant to delete its dump on
+    clean exit, but a SIGKILL (e.g. mediamtx's runOnDemandCloseAfter)
+    leaves the file behind, which would otherwise show a fake utilisation
+    forever."""
     d = Path("/tmp/nnc_utilization")
     if not d.is_dir():
         return None
-    # Pick the freshest entry — multiple files would only appear with
-    # multiple concurrent VDevices, which the SDK doesn't fully support
-    # anyway (it warns about non-consistent tracing).
     try:
         candidates = sorted(d.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
     except OSError:
         return None
+    now = time.time()
     for p in candidates:
         try:
-            txt = p.read_text().strip()
-            return round(float(txt), 1)
+            st = p.stat()
+            if (now - st.st_mtime) > _NNC_STALE_AFTER_S:
+                continue
+            return round(float(p.read_text().strip()), 1)
         except (OSError, ValueError):
             continue
     return None
