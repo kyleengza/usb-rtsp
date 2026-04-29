@@ -535,6 +535,26 @@ async function refreshHost() {
     showCard("hailo", false);
   }
 
+  // Pi PSU tile (always visible when /api/host returned pi_psu data).
+  const psuTile = document.querySelector('[data-host-tile="pi_psu"]');
+  if (psuTile && h.pi_psu) {
+    psuTile.hidden = false;
+    const v = h.pi_psu.rail_v;
+    const a = h.pi_psu.est_a;
+    const w = h.pi_psu.est_w;
+    set("[data-pi-psu-volt]", v != null ? `${v.toFixed(2)} V` : "— V");
+    const loadBits = [];
+    if (w != null) loadBits.push(`${w.toFixed(1)} W`);
+    if (a != null) loadBits.push(`${a.toFixed(2)} A est`);
+    set("[data-pi-psu-load]", loadBits.length ? loadBits.join(" · ") : "—");
+    // Tint red when the rail sags. Pi 5 expects ≥ 4.75 V; below that
+    // is the brown-out band the throttle bits flag.
+    psuTile.classList.toggle("err", v != null && v < 4.75);
+    psuTile.classList.toggle("warn", v != null && v >= 4.75 && v < 4.95);
+  } else if (psuTile) {
+    psuTile.hidden = true;
+  }
+
   if (h.ups) {
     showCard("ups", true);
     set("[data-ups-title]", h.ups.model ? `UPS HAT — ${h.ups.model}` : "UPS HAT");
@@ -542,6 +562,17 @@ async function refreshHost() {
     const p = h.ups.battery_pct != null ? `${h.ups.battery_pct}%` : "—";
     set("[data-ups-volt]", `${v} (${p})`);
     setBar("[data-ups-bar]", h.ups.battery_pct || 0);
+    // Charge direction sub-line. INA219 shunt sign tells us whether
+    // current is flowing INTO the pack (charging from HAT USB-C input)
+    // or OUT (discharging into the Pi). Threshold ±5 mA dodges noise.
+    const cm = h.ups.charge_ma;
+    let chargeText = "1S Li-ion";
+    if (cm != null) {
+      if (cm > 5)        chargeText = `charging · +${cm} mA`;
+      else if (cm < -5)  chargeText = `discharging · ${cm} mA`;
+      else               chargeText = "balanced · 0 mA";
+    }
+    set("[data-ups-charge]", chargeText);
     const sourceLabels = {
       ac:          "AC power",
       battery:     "On battery",

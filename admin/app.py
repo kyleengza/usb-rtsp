@@ -889,6 +889,7 @@ def _ups_info() -> dict | None:
             "model": _UPS_MODEL_LABELS.get(conf.get("MODEL", ""), conf.get("MODEL", "UPS")),
             "low_v": low_v,
             "watchdog_active": _ups_watchdog_active(),
+            "charge_ma": _ups_charge_ma(),
         }
 
     # Fallback: direct INA219 read (no pi-bringup helper available).
@@ -922,6 +923,81 @@ def _ups_info() -> dict | None:
         "battery_pct": pct,
         "source": source,
         "model": "UPS (INA219 0x43)",
+    }
+
+
+_INA219_SHUNT_REG = 0x01
+_INA219_SHUNT_LSB_UV = 10           # microvolts per LSB
+_INA219_SHUNT_OHMS_M = 100          # 100 mΩ on the Waveshare UPS HAT (E)
+
+
+def _ups_charge_ma() -> int | None:
+    """Read the INA219 shunt voltage and convert to mA flowing INTO the
+    pack (positive = charging, negative = discharging). Returns None if
+    the chip isn't reachable."""
+    raw = _i2c_read_word_be(1, 0x43, _INA219_SHUNT_REG)
+    if raw is None:
+        return None
+    if raw & 0x8000:
+        raw -= 0x10000
+    sv_uv = raw * _INA219_SHUNT_LSB_UV
+    # µV / mΩ = µA, so /1000 = mA. Equivalently µV / shunt_mΩ * 0.001.
+    return int(round(sv_uv / _INA219_SHUNT_OHMS_M * 0.001 * 1000))
+
+
+def _pi_psu_info() -> dict | None:
+    """Pi 5 PSU rail telemetry from ``vcgencmd pmic_read_adc``. Reports
+    5V_RAIL voltage (the USB-C input) and the estimated total instant
+    power draw across all rails. The Pi 5 PMIC doesn't expose a single
+    "input current" ADC; we sum per-rail V*A to get a proxy for what
+    the PSU is supplying."""
+    try:
+        p = subprocess.run(
+            ["vcgencmd", "pmic_read_adc"],
+            capture_output=True, text=True, timeout=2,
+        )
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return None
+    if p.returncode != 0:
+        return None
+
+    volts: dict[str, float] = {}   # rail name (without _V) → volts
+    currents: dict[str, float] = {} # rail name (without _A) → amps
+    for line in p.stdout.splitlines():
+        line = line.strip()
+        # e.g. "EXT5V_V volt(24)=5.23672000V" or "VDD_CORE_A current(7)=0.794A"
+        if "_V volt(" in line and line.endswith("V"):
+            name = line.split("_V volt", 1)[0].strip()
+            try:
+                volts[name] = float(line.rsplit("=", 1)[1].rstrip("V"))
+            except ValueError:
+                pass
+        elif "_A current(" in line and line.endswith("A"):
+            name = line.split("_A current", 1)[0].strip()
+            try:
+                currents[name] = float(line.rsplit("=", 1)[1].rstrip("A"))
+            except ValueError:
+                pass
+
+    ext_v = volts.get("EXT5V")
+    # Estimate total power by summing per-rail V*A. Skip the EXT5V rail
+    # itself — its current isn't reported, only its voltage.
+    total_w = 0.0
+    for rail, amps in currents.items():
+        v = volts.get(rail)
+        if v is None:
+            continue
+        total_w += v * amps
+    # Approximate input current = total_w / EXT5V (with PSU efficiency
+    # losses inside the PMIC, real input draw is somewhat higher).
+    ext_a = (total_w / ext_v) if (ext_v and ext_v > 0) else None
+
+    if ext_v is None and not currents:
+        return None
+    return {
+        "rail_v": round(ext_v, 3) if ext_v is not None else None,
+        "est_a": round(ext_a, 3) if ext_a is not None else None,
+        "est_w": round(total_w, 2) if total_w else None,
     }
 
 
@@ -1200,6 +1276,7 @@ def api_host() -> JSONResponse:
     info["fan"] = _fan_info()
     info["hailo"] = _hailo_info()
     info["ups"] = _ups_info()
+    info["pi_psu"] = _pi_psu_info()
     info["cpu_pct"] = _cpu_pct()
     info["lan"] = _lan_info()
     info["throttle"] = _throttle_info()
