@@ -561,11 +561,29 @@ async function refreshHost() {
     const v = h.ups.battery_v != null ? `${h.ups.battery_v.toFixed(2)} V` : "— V";
     const p = h.ups.battery_pct != null ? `${h.ups.battery_pct}%` : "—";
     set("[data-ups-volt]", `${v} (${p})`);
-    setBar("[data-ups-bar]", h.ups.battery_pct || 0);
+    // Battery bar: colour reflects health, not severity. setBar (used for
+    // memory/disk) maps high pct → red, which is wrong for a battery
+    // where high = good. Custom logic combining pct + charge direction.
+    const cm = h.ups.charge_ma;
+    const pct = h.ups.battery_pct || 0;
+    const bar = $("[data-ups-bar]");
+    if (bar) {
+      bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+      bar.classList.remove("ok", "warn", "err");
+      const charging    = cm != null && cm > 5;
+      const discharging = cm != null && cm < -5;
+      let cls;
+      if (pct < 20)                            cls = "err";       // critical
+      else if (discharging && pct < 50)        cls = "err";       // low + draining
+      else if (pct >= 90)                      cls = "ok";        // full / trickle
+      else if (charging)                       cls = "warn";      // recovering
+      else if (discharging)                    cls = "warn";      // on battery, ok level
+      else                                     cls = pct >= 50 ? "ok" : "warn";  // balanced
+      bar.classList.add(cls);
+    }
     // Charge direction sub-line. INA219 shunt sign tells us whether
     // current is flowing INTO the pack (charging from HAT USB-C input)
     // or OUT (discharging into the Pi). Threshold ±5 mA dodges noise.
-    const cm = h.ups.charge_ma;
     let chargeText = "1S Li-ion";
     if (cm != null) {
       if (cm > 5)        chargeText = `charging · +${cm} mA`;

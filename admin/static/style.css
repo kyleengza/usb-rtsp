@@ -500,8 +500,9 @@ button.danger:hover { background: var(--err); color: white; }
 .host-sub { color: var(--muted); font-size: 0.75rem; margin-top: 0.2rem; }
 .host-bar { background: #0a0d12; height: 4px; border-radius: 2px; margin-top: 0.4rem; overflow: hidden; }
 .host-bar-fill { height: 100%; background: var(--accent); transition: width 0.3s ease; width: 0; }
+.host-bar-fill.ok   { background: var(--ok, #4caf6f); }
 .host-bar-fill.warn { background: var(--warn); }
-.host-bar-fill.err { background: var(--err); }
+.host-bar-fill.err  { background: var(--err); }
 .host-tile.warn { border-color: var(--warn); }
 .host-tile.warn .host-value { color: var(--warn); }
 .host-tile.err { border-color: var(--err); }
