@@ -69,9 +69,9 @@ take it public).
 | **Cameras card** (left pane) | One row per camera. Each row has a Live preview iframe (WebRTC via the panel's same-origin proxy), per-format/resolution/fps/encode/quality dropdowns, plus three URL rows (WebRTC / HLS / RTSP) each with `copy`, `open here`, and a `QR` button that pops a scannable code. |
 | **Relays card** (left pane, when `relay` plugin enabled) | Same shape as cameras — pulls a remote RTSP/RTMP/HTTP source and re-broadcasts it as a local path. Optional re-encode for cross-browser-compatible H.264 baseline. |
 | **Active streams** (right pane) | One row per live RTSP / WebRTC / HLS session with peer IP, transport, bytes, duration, plus per-row `kick` (terminate the mediamtx session) and `block` (UFW deny + auto-kick) actions. |
-| **Host card** (right pane) | Model, kernel, uptime, LAN IP, network RX/TX, CPU load, memory, disk, CPU temperature + fan RPM, throttle/under-voltage history with a "fresh" decay window so latched bits don't stay yellow forever. |
-| **Hailo AI HAT** (conditional) | Model, firmware (cached from `pifetch` / `hailortcli`), driver, `/dev/hailo0` presence, PCIe link speed/width to the RP1 bridge. |
-| **UPS HAT** (conditional) | Battery voltage and percent, source label (`AC` / `On battery` / `On battery — low` / `⚠ HAT i2c unreachable`), watchdog service status, low-voltage cutoff. Reads from pi-bringup's helpers when present, falls back to a direct INA219 read at `0x43`. |
+| **Host card** (right pane) | Model, kernel, uptime, LAN IP, network RX/TX, CPU load, memory, disk, CPU temperature + fan RPM, throttle/under-voltage history with a "fresh" decay window so latched bits don't stay yellow forever. **Pi PSU (USB-C) tile** shows live 5V_RAIL voltage + estimated input wattage from `vcgencmd pmic_read_adc`; tints yellow at <4.95 V, red at <4.75 V (the brown-out band). |
+| **Hailo AI HAT** (conditional) | Model, firmware (cached from `pifetch` / `hailortcli`), driver, `/dev/hailo0` presence, PCIe link speed/width to the RP1 bridge, and **live NNC utilisation** (% of the chip's 26 TOPS being used) when any `hailort` app is running with `HAILO_MONITOR=1` set — the `inference` plugin's worker enables that automatically. Stale-file detection (10 s) handles SIGKILLed workers cleanly. |
+| **UPS HAT** (conditional) | Battery voltage and percent, source label (`AC` / `On battery` / `On battery — low` / `⚠ HAT i2c unreachable`), watchdog service status, low-voltage cutoff, **charge direction** (charging / discharging / balanced with mA from the INA219 shunt). Battery bar colour reflects health (green near full, yellow when charging-but-low or discharging-but-ok, red when low + draining). Reads from pi-bringup's helpers when present, falls back to a direct INA219 read at `0x43`. |
 | **WebRTC public access** (conditional) | Current auto-detected public IP, source (`HTTP` echo or `DNS` resolve), last detection time. Click → `/settings#webrtc-section` to configure. |
 
 Every card has a `Hide ▴ / Show ▾` button next to its title. Choice
@@ -187,14 +187,21 @@ public_host configured?
 ```
 
 The result is cached at `~/.cache/usb-rtsp/public-ip` and emitted into the
-rendered `mediamtx.yml` as:
+rendered `mediamtx.yml` as a unified host list (mediamtx ≥ 1.18 schema):
 
 ```yaml
-webrtcICEHostNAT1To1IPs:
-- 102.213.127.232          # whatever was detected
 webrtcAdditionalHosts:
-- 192.168.100.14           # the LAN IP, kept for hairpin / LAN viewers
+- 192.168.100.14           # LAN — listed first so on-network browsers try direct UDP
+- 102.213.127.232          # public — auto-detected
+webrtcICEServers2:
+- url: stun:stun.l.google.com:19302
+- url: stun:stun.cloudflare.com:3478
 ```
+
+STUN servers (configurable via `webrtc.stun_servers` in `auth.yml`) are
+advertised so off-LAN browsers and clients behind symmetric NAT can
+discover server-reflexive candidates and establish ICE without relying
+on the host candidate alone.
 
 When the IP changes the lifespan task re-renders + restarts mediamtx —
 **only if there are no active WebRTC viewers**. If anyone's watching, the
@@ -404,7 +411,7 @@ Two first-party plugins live in their own repos so they install à la carte:
 | Plugin | Repo | What it does |
 |---|---|---|
 | `relay` | [`kyleengza/usb-rtsp-plugin-relay`](https://github.com/kyleengza/usb-rtsp-plugin-relay) | Pull a remote RTSP/RTMP/HTTP stream and re-broadcast as a local path. Optional re-encode (cross-browser-compatible H.264 baseline). |
-| `inference` | [`kyleengza/usb-rtsp-plugin-inference`](https://github.com/kyleengza/usb-rtsp-plugin-inference) | Receive detections + annotated streams from an external inference project. |
+| `inference` | [`kyleengza/usb-rtsp-plugin-inference`](https://github.com/kyleengza/usb-rtsp-plugin-inference) | Run object detection (Hailo or CPU) on any mediamtx path; republish annotated frames as `<source>-ai`; record event-triggered clips. One-click toggle per source on the settings page. |
 
 Install via the panel (Settings → Plugins → **Add plugin ▾**) or CLI:
 
@@ -554,11 +561,22 @@ its block, then `python3 -m core.renderer && systemctl --user restart usb-rtsp`.
 **External WebRTC: SDP exchange completes, then session closes with
 `deadline exceeded while waiting connection`.** mediamtx's SDP answer
 isn't advertising a candidate the peer can route to. Check
-`grep webrtcICEHostNAT1To1 ~/.config/usb-rtsp/mediamtx.yml` — if it's
-absent, the auto-detect failed; click **Detect now** in the panel or
-set a `Public hostname or IP` manually. If it's there but still fails,
-verify your perimeter forwards UDP 8189 (and TCP 8889) to the Pi, and
-that UFW has those ports set to **Anywhere** in the panel.
+`grep webrtcAdditionalHosts ~/.config/usb-rtsp/mediamtx.yml` — if the
+public IP isn't there, the auto-detect failed; click **Detect now** in
+the panel or set a `Public hostname or IP` manually. If both LAN and
+public are listed but ICE still fails for off-LAN clients, the panel
+also advertises STUN servers (Google + Cloudflare by default) so the
+browser can gather server-reflexive candidates — that path covers
+client-isolated networks. If it still fails, verify your perimeter
+forwards UDP 8189 (and TCP 8889) to the Pi, and that UFW has those
+ports set to **Anywhere** in the panel.
+
+**Preview iframe fails to start, repeated WHEP DELETE 404s.** Likely a
+Firefox bfcache issue with the iframe's WebRTC client retry timer
+surviving an iframe-src navigation. The relay/inference plugins
+replace the iframe element on fold-close to defeat this; if you see
+it on a custom integration, set `iframe.src = "about:blank"` *and*
+remove the iframe from the DOM (don't just hide it).
 
 **Stream froze on the phone after I changed UFW scope, but the active
 session row stayed up.** UFW filters new packets at the kernel boundary;
@@ -572,6 +590,16 @@ release the session immediately without touching the firewall.
 LAN terminal: `sudo ufw insert 1 allow from 192.168.100.0/24 to any port 8080 proto tcp comment 'usb-rtsp admin'`
 (adjust your `/24`). The panel will be reachable again, then re-toggle
 through the UI.
+
+**Pi reboots / brownouts under sustained inference load.** PSU + cable
+combination undersized for `ffmpeg` + Hailo + concurrent encodes peaks.
+Watch `vcgencmd get_throttled` for `0x50000` (under-voltage + throttle
+since boot). Best fix is hardware: a Pi 5 official 5 V / 5 A supply
+plugged directly into the Pi USB-C, charging the UPS HAT separately
+via its own USB-C input — the Pi stays clean while the HAT keeps the
+backup pack topped up. Pi-bringup's UPS watchdog ≥ commit `e9c40b1`
+honours `RESPECT_PI_RAIL=1` so a low UPS battery won't shut down a
+Pi that has its own healthy supply.
 
 **VLC fails with "Connection failed" / "Unable to open the MRL".** VLC's
 RTSP client sends `SETUP` against the path URL instead of the per-track
