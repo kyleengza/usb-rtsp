@@ -967,15 +967,23 @@ _INA219_SHUNT_OHMS_M = 100          # 100 mΩ on the Waveshare UPS HAT (E)
 def _ups_charge_ma() -> int | None:
     """Read the INA219 shunt voltage and convert to mA flowing INTO the
     pack (positive = charging, negative = discharging). Returns None if
-    the chip isn't reachable."""
+    the chip isn't reachable.
+
+    Sign convention on the Waveshare UPS HAT (E): IN+ is on the battery
+    side, IN- feeds the boost converter. Current battery→boost reads as
+    a POSITIVE shunt voltage, but in product terms that's *discharging*
+    (battery is the source). We negate so callers can use the intuitive
+    "positive = charging" convention. Verified empirically: with no
+    charger attached and the Pi powered from its own USB-C, raw shunt
+    reads +120 mA while bus voltage falls — i.e. discharging."""
     raw = _i2c_read_word_be(1, 0x43, _INA219_SHUNT_REG)
     if raw is None:
         return None
     if raw & 0x8000:
         raw -= 0x10000
     sv_uv = raw * _INA219_SHUNT_LSB_UV
-    # µV / mΩ = µA, so /1000 = mA. Equivalently µV / shunt_mΩ * 0.001.
-    return int(round(sv_uv / _INA219_SHUNT_OHMS_M * 0.001 * 1000))
+    # µV / mΩ * 0.001 → mA. Negate to flip product convention.
+    return int(round(-(sv_uv / _INA219_SHUNT_OHMS_M * 0.001 * 1000)))
 
 
 def _pi_psu_info() -> dict | None:
