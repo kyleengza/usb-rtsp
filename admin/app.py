@@ -922,7 +922,7 @@ def _ups_info() -> dict | None:
             "model": _UPS_MODEL_LABELS.get(conf.get("MODEL", ""), conf.get("MODEL", "UPS")),
             "low_v": low_v,
             "watchdog_active": _ups_watchdog_active(),
-            "charge_ma": _ups_charge_ma(),
+            "load_ma": _ups_load_ma(),
         }
 
     # Fallback: direct INA219 read (no pi-bringup helper available).
@@ -964,26 +964,35 @@ _INA219_SHUNT_LSB_UV = 10           # microvolts per LSB
 _INA219_SHUNT_OHMS_M = 100          # 100 mΩ on the Waveshare UPS HAT (E)
 
 
-def _ups_charge_ma() -> int | None:
-    """Read the INA219 shunt voltage and convert to mA flowing INTO the
-    pack (positive = charging, negative = discharging). Returns None if
-    the chip isn't reachable.
+def _ups_load_ma() -> int | None:
+    """Read the INA219 shunt and return the absolute current magnitude
+    flowing through the boost-converter input (always positive).
 
-    Sign convention on the Waveshare UPS HAT (E): IN+ is on the battery
-    side, IN- feeds the boost converter. Current battery→boost reads as
-    a POSITIVE shunt voltage, but in product terms that's *discharging*
-    (battery is the source). We negate so callers can use the intuitive
-    "positive = charging" convention. Verified empirically: with no
-    charger attached and the Pi powered from its own USB-C, raw shunt
-    reads +120 mA while bus voltage falls — i.e. discharging."""
+    Sign on the Waveshare UPS HAT (E) doesn't disambiguate charge
+    direction — the shunt sits on the load-side rail, so current is
+    positive whether it's coming from the battery (discharging) or
+    from the charger (with most going to load and a fraction trickling
+    into the cell). Verified empirically:
+      - no charger: V=4.08, shunt=+120 mA, V falling   → discharging
+      - charger:    V=4.14, shunt=+30  mA, V holding   → charging
+
+    The direction inference now lives in the JS, computed from a
+    short voltage-trajectory window."""
     raw = _i2c_read_word_be(1, 0x43, _INA219_SHUNT_REG)
     if raw is None:
         return None
     if raw & 0x8000:
         raw -= 0x10000
     sv_uv = raw * _INA219_SHUNT_LSB_UV
-    # µV / mΩ * 0.001 → mA. Negate to flip product convention.
-    return int(round(-(sv_uv / _INA219_SHUNT_OHMS_M * 0.001 * 1000)))
+    return abs(int(round(sv_uv / _INA219_SHUNT_OHMS_M * 0.001 * 1000)))
+
+
+# Backwards-compat alias used by the existing /api/host wiring. The
+# value semantics moved from "signed mA into pack" to "unsigned mA at
+# the load-side shunt"; the field name on the JSON also changes
+# (charge_ma → load_ma) so the JS can do the trend-based direction
+# inference without confusion.
+_ups_charge_ma = _ups_load_ma
 
 
 def _pi_psu_info() -> dict | None:

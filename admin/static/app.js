@@ -435,6 +435,8 @@ async function refreshHost() {
   let h;
   try { h = await fetch("/api/host").then(r => r.json()); } catch { return; }
 
+  // (helper closures hoisted via initializer below — see _upsVHist)
+
   const set = (sel, val) => { const el = $(sel); if (el) el.textContent = val; };
   const setBar = (sel, pct) => {
     const el = $(sel); if (!el) return;
@@ -579,34 +581,37 @@ async function refreshHost() {
     const v = h.ups.battery_v != null ? `${h.ups.battery_v.toFixed(2)} V` : "— V";
     const p = h.ups.battery_pct != null ? `${h.ups.battery_pct}%` : "—";
     set("[data-ups-volt]", `${v} (${p})`);
-    // Battery bar: colour reflects health, not severity. setBar (used for
-    // memory/disk) maps high pct → red, which is wrong for a battery
-    // where high = good. Custom logic combining pct + charge direction.
-    const cm = h.ups.charge_ma;
+    // Charge direction can't be inferred from shunt sign on the
+    // Waveshare UPS HAT (E) — the shunt is load-side, always positive.
+    // Use voltage trajectory across the recent /api/host poll history:
+    // rising volts = charging, falling = discharging, flat = trickle.
+    if (h.ups.battery_v != null) _pushUpsVHist(h.ups.battery_v);
+    const trend = _upsVTrend();   // mV per minute
+    const load = h.ups.load_ma;
     const pct = h.ups.battery_pct || 0;
     const bar = $("[data-ups-bar]");
     if (bar) {
       bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
       bar.classList.remove("ok", "warn", "err");
-      const charging    = cm != null && cm > 5;
-      const discharging = cm != null && cm < -5;
+      const charging    = trend != null && trend > 5;
+      const discharging = trend != null && trend < -5;
       let cls;
-      if (pct < 20)                            cls = "err";       // critical
-      else if (discharging && pct < 50)        cls = "err";       // low + draining
-      else if (pct >= 90)                      cls = "ok";        // full / trickle
-      else if (charging)                       cls = "warn";      // recovering
-      else if (discharging)                    cls = "warn";      // on battery, ok level
-      else                                     cls = pct >= 50 ? "ok" : "warn";  // balanced
+      if (pct < 20)                          cls = "err";
+      else if (discharging && pct < 50)      cls = "err";
+      else if (pct >= 90)                    cls = "ok";
+      else if (charging)                     cls = "warn";
+      else if (discharging)                  cls = "warn";
+      else                                   cls = pct >= 50 ? "ok" : "warn";
       bar.classList.add(cls);
     }
-    // Charge direction sub-line. INA219 shunt sign tells us whether
-    // current is flowing INTO the pack (charging from HAT USB-C input)
-    // or OUT (discharging into the Pi). Threshold ±5 mA dodges noise.
     let chargeText = "1S Li-ion";
-    if (cm != null) {
-      if (cm > 5)        chargeText = `charging · +${cm} mA`;
-      else if (cm < -5)  chargeText = `discharging · ${cm} mA`;
-      else               chargeText = "balanced · 0 mA";
+    if (load != null) {
+      if (trend == null)            chargeText = `${load} mA load`;
+      else if (trend > 5)           chargeText = `charging · ${load} mA load`;
+      else if (trend < -5)          chargeText = `discharging · ${load} mA load`;
+      else                          chargeText = pct >= 90
+                                      ? `trickle · ${load} mA load`
+                                      : `holding · ${load} mA load`;
     }
     set("[data-ups-charge]", chargeText);
     const sourceLabels = {
@@ -682,6 +687,33 @@ async function refreshWebrtcPublic() {
 
 
 // ─── boot ──────────────────────────────────────────────────────────────────
+
+// ─── UPS voltage trajectory for charge-direction inference ────────────
+// The Waveshare UPS HAT (E)'s INA219 shunt is load-side: positive
+// regardless of whether the source is the battery or the charger.
+// Voltage trend across the recent host-poll window is the only honest
+// signal. Window: last ~90 s of samples.
+
+const _UPS_V_HIST_MAX = 18;            // ~90 s at the 5 s host-poll cadence
+const _upsVHist = [];
+
+function _pushUpsVHist(volts) {
+  const now = Date.now();
+  _upsVHist.push({ t: now, v: volts });
+  while (_upsVHist.length > _UPS_V_HIST_MAX) _upsVHist.shift();
+  // Drop stale samples (e.g. across a tab-suspend).
+  while (_upsVHist.length && (now - _upsVHist[0].t) > 5 * 60 * 1000) _upsVHist.shift();
+}
+
+function _upsVTrend() {
+  // Returns mV/min trend, or null if too few samples.
+  if (_upsVHist.length < 4) return null;
+  const first = _upsVHist[0], last = _upsVHist[_upsVHist.length - 1];
+  const dt_min = (last.t - first.t) / 60000;
+  if (dt_min < 0.4) return null;       // ≥ 24 s of data
+  return ((last.v - first.v) * 1000) / dt_min;
+}
+
 
 // ─── per-input enable/disable (cameras, relay sources, ...) ───────────────
 // Wherever a slider has data-input-toggle="<plugin>/<name>", clicking it
